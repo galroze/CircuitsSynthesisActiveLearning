@@ -1,26 +1,17 @@
 import pandas
 import math
-from LogicTypes import OneNot
-from LogicTypes import TwoXor
-from LogicTypes import TwoAnd
-from LogicTypes import ThreeAnd
-from LogicTypes import FourAnd
-from LogicTypes import TwoOr
-from LogicTypes import ThreeOr
-from LogicTypes import FourOr
-from LogicTypes import TwoNor
-from LogicTypes import ThreeNor
-from LogicTypes import FourNor
+from LogicTypes import *
 from LogicUtils import *
 
 
 if __name__ == '__main__':
-
-    fileName = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\Data_Systems\\74182.sys"
+    circuit_name = '74283'
+    fileName = CIRCUIT_SYSTEM_PATH + circuit_name + ".sys"
     lines = [line.rstrip('\n') for line in open(fileName)]
 
     logic_types = {OneNot.name: OneNot, TwoXor.name: TwoXor, TwoAnd.name: TwoAnd, ThreeAnd.name: ThreeAnd,
-                       FourAnd.name: FourAnd, TwoOr.name: TwoOr, ThreeOr.name: ThreeOr, FourOr.name: FourOr, TwoNor.name: TwoNor, ThreeNor.name: ThreeNor, FourNor.name: FourNor}
+                       FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, TwoOr.name: TwoOr, ThreeOr.name: ThreeOr, FourOr.name: FourOr,
+                   TwoNor.name: TwoNor, ThreeNor.name: ThreeNor, FourNor.name: FourNor, FiveNor.name: FiveNor, NotAnd.name: NotAnd}
 
     inputs = lines[1].split(sep=',')
     inputs[0] = inputs[0].replace('[', '')
@@ -56,5 +47,5 @@ if __name__ == '__main__':
         truth_table.insert(len(truth_table.columns), output, output_column)
 
     truth_table = truth_table[truth_table.columns[pandas.Series(truth_table.columns).str.startswith('z') == False]]
-    truth_table.to_csv(TRUTH_TABLE_PATH_74182, sep='\t', index=False)
-    print("Done generating: " + str(TRUTH_TABLE_PATH_74182) + " \ninputs: " + str(get_input_names(truth_table)) + " outputs: " + str(get_output_names(truth_table)))
+    truth_table.to_csv(TRUTH_TABLE_PATH + circuit_name + ".tab", sep='\t', index=False)
+    print("Done generating: " + str(TRUTH_TABLE_PATH + circuit_name + ".tab") + " \ninputs: " + str(get_input_names(truth_table)) + " outputs: " + str(get_output_names(truth_table)))

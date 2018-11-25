@@ -1,7 +1,6 @@
 import pandas
 
-# CONSTANTS
-TRUTH_TABLE_PATH_74182 = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\truth_tables\\74182.tab"
+
 
 def get_transformed_att_value (data, att_names, gate):
     first_value = True
