@@ -1,5 +1,8 @@
 import operator
 
+# CONSTANTS
+TRUTH_TABLE_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\truth_tables\\"
+CIRCUIT_SYSTEM_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\Data_Systems\\"
 
 class OneNot:
     name = "inverter"
@@ -54,6 +57,29 @@ class FourAnd:
     @staticmethod
     def f(value1, value2, value3, value4):
         return operator.and_(operator.and_(value1, value2), operator.and_(value3, value4))
+
+
+class FiveAnd:
+    name = "and5"
+    numInputs = 5
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5):
+        return operator.and_(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)), value5)
+
+
+class NotAnd:
+    name = "nand2"
+    numInputs = 2
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2):
+        return not operator.and_(value1, value2)
+
 
 class TwoOr:
     name = "or2"
@@ -119,3 +145,14 @@ class FourNor:
     @staticmethod
     def f(value1, value2, value3, value4):
         return not operator.or_(operator.or_(value1, value2), operator.or_(value3, value4))
+
+
+class FiveNor:
+    name = "nor5"
+    numInputs = 5
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5):
+        return not operator.or_(operator.or_(operator.or_(value1, value2), operator.or_(value3, value4)), value5)
