@@ -1,66 +1,36 @@
-import operator
-import pandas
+from os import listdir
+from os.path import isfile, join
 import itertools
 import time
 import re
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import _tree
 from LogicUtils import *
+from LogicTypes import *
 
 
-class OneNot:
-    name = "not"
-    numInputs = 1
-    numOutputs = 1
-    cost = 1
+class ActiveLearningCircuitSynthesisConfiguration:
 
-    @staticmethod
-    def f(value):
-        return not value
+    def __init__(self, file_name, possible_gates, subset_min, subset_max, max_num_of_iterations, use_orthogonal_arrays,
+                 use_explore_nodes, randomize_remaining_data, random_batch_size, min_oa_strength):
 
-
-class TwoXor:
-    name = "2xor"
-    numInputs = 2
-    numOutputs = 1
-    cost = 1
-
-    @staticmethod
-    def f(value1, value2):
-        return operator.xor(value1, value2)
-
-
-class TwoAnd:
-    name = "2and"
-    numInputs = 2
-    numOutputs = 1
-    cost = 1
-
-    @staticmethod
-    def f(value1, value2):
-        return operator.and_(value1, value2)
-
-
-class TwoOr:
-    name = "2or"
-    numInputs = 2
-    numOutputs = 1
-    cost = 1
-
-    @staticmethod
-    def f(value1, value2):
-        return operator.or_(value1, value2)
+        self.file_name = file_name
+        self.possible_gates = possible_gates
+        self.subset_min = subset_min
+        self.subset_max = subset_max
+        self.max_num_of_iterations = max_num_of_iterations
+        self.use_orthogonal_arrays = use_orthogonal_arrays
+        self.use_explore_nodes = use_explore_nodes
+        # when using OA and there are no more arrays to use, True for random, False for taking all remaining data
+        self.randomize_remaining_data = randomize_remaining_data
+        self.random_batch_size = random_batch_size
+        self.min_oa_strength = min_oa_strength
 
 
 class GateFeature:
     def __init__(self, gate, inputs):
         self.gate = gate
-        self.inputs = []
-        if isinstance(inputs, GateFeature.__class__):
-            self.inputs.append(inputs)
-        else:
-            for input in inputs:
-                self.inputs.append(input)
+        self.inputs = inputs
 
     def to_string(self):
         to_string = ""
@@ -79,19 +49,15 @@ class GateFeature:
 
         return to_string
 
+    def __key(self):
+        # return (self.attr_a, self.attr_b, self.attr_c)
+        return self.to_string()
+
+    def __hash__(self):
+        return hash(self.__key())
+
     def __eq__(self, other):
-        return self.to_string().__eq__(other.to_string())
-
-
-class OA:
-    def __init__(self, array, num_of_att):
-        self.array = array
-        self.num_of_att = num_of_att
-
-
-def preprocess(data): # maybe take it off aftre refactor!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    data.replace("F", False, inplace=True)
-    data.replace("T", True, inplace=True)
+        return isinstance(self, type(other)) and self.__key() == other.__key()
 
 
 def insert_gate_as_att(data, gate_feature, max_input_index):
@@ -105,7 +71,6 @@ def insert_gate_as_att(data, gate_feature, max_input_index):
 def print_tree_to_code(tree, curr_gate_features):
     tree_ = tree.tree_
     tree_feature_names = get_tree_feature_names(curr_gate_features, tree)
-    # print ("def tree({}):".format(", ".join(curr_gate_features))) # should be refactored if needed
 
     def recurse(node, depth):
         indent = "  " * depth
@@ -172,7 +137,7 @@ def matched_oa(data_row, oa_row):
     return True
 
 
-def process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore):
+def process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore_by_tree):
     # 1. filter next oa of curr oa because older instances shouldn't be filtered,
     # therefore no use of going over a row in next oa that is already included in curr oa
     if curr_oa is not None:
@@ -189,26 +154,22 @@ def process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore):
         curr_oa = []
         updated_next_oa_array = next_oa.array
 
-    # 2. apply values to explore filter over next oa, make sure there are enough att as values,
+    # 2. apply values to explore filter over next oa, make sure there are more or equal att as values to explore,
     # if not use the first values as they are ordered from root to leaf
-    # for every value look for its position in the feature gates collection and apply oa filter at the same position
-    if len(values_to_explore) > 0:
-        if len(values_to_explore) > len(updated_next_oa_array[0]):
-            values_to_explore = values_to_explore.copy()[:len(updated_next_oa_array[0])]
-            print("******** WARN - Orthogonal array has less attributes than inputs(values to explore) ********")
-        # going over each input and placing an explorable value if exist or any 0 or 1 value if it doesn't exist
-        explorable_regex = '^'
-        #feature_input_index = 0
-        max_att = min(len(gate_features_inputs), len(updated_next_oa_array[0]))
-        for feature_input_index in range(max_att):
-            value_to_explore = get_value_to_explore(gate_features_inputs[feature_input_index], values_to_explore)
-            if value_to_explore is not None:
-                explorable_regex += str(value_to_explore[1]) # appends the node's value
-            else:
-                explorable_regex += '[0-1]'
-        explorable_regex += '.*$'
-        compiled_regex = re.compile(explorable_regex)
-        updated_next_oa_array = list(filter(compiled_regex.match, updated_next_oa_array))
+    trees_joint_next_oa_array = []
+    if len(values_to_explore_by_tree) > 0:
+        at_least_one_value_exists = False
+        for tree_values in values_to_explore_by_tree.values():
+            if (len(tree_values) > 0) & (len(updated_next_oa_array) > 0):
+                at_least_one_value_exists = True
+                if len(tree_values) > len(updated_next_oa_array[0]):
+                    tree_values = tree_values.copy()[:len(updated_next_oa_array[0])]
+                    print("******** WARN - Orthogonal array has less attributes than inputs(values to explore) ********")
+                oa_by_values_to_explore = get_data_by_values_to_explore(tree_values, gate_features_inputs, updated_next_oa_array)
+                trees_joint_next_oa_array = list(set(trees_joint_next_oa_array) | set(oa_by_values_to_explore))
+                updated_next_oa_array = [x for x in updated_next_oa_array if x not in oa_by_values_to_explore]
+        if at_least_one_value_exists:
+            updated_next_oa_array = trees_joint_next_oa_array
 
     # 3. merge curr oa with processed next oa
     return list(set(curr_oa + updated_next_oa_array))
@@ -221,24 +182,37 @@ def get_value_to_explore(value, values_to_explore):
     return None
 
 
-# def get_oa(num_of_data_inputs, oa, values_to_explore):
-#     num_of_oa_att = min(num_of_data_inputs, oa.num_of_att)
-#     values_to_explore = values_to_explore[:num_of_oa_att] # cutting values_to_explore to the current number of OA attributes
-#
-#     # cleaning current OA from rows not matching the desired values to explore
-#     curr_oa = oa.array.copy()
-#     if values_to_explore != "":
-#         updated_curr_oa = []
-#         for oa_row_index in range(len(curr_oa)):
-#             if matched_oa(values_to_explore, curr_oa[oa_row_index]):
-#                 updated_curr_oa.append(curr_oa[oa_row_index])
-#         curr_oa = updated_curr_oa
-#     return curr_oa
+def get_data_by_values_to_explore(values_to_explore, gate_features_inputs, data_list):
+    # going over each input and placing an explorable value if exist or any 0 or 1 value if it doesn't exist
+    # for every value look for its position in the feature gates collection and apply oa filter at the same position
+    explorable_regex = '^'
+    max_att = min(len(gate_features_inputs), len(data_list[0]))
+    for feature_input_index in range(max_att):
+        value_to_explore = get_value_to_explore(gate_features_inputs[feature_input_index], values_to_explore)
+        if value_to_explore is not None:
+            explorable_regex += str(value_to_explore[1])  # appends the node's value
+        else:
+            explorable_regex += '[0-1]'
+    explorable_regex += '.*$'
+    compiled_regex = re.compile(explorable_regex)
+    return list(filter(compiled_regex.match, data_list))
+
+
+def get_data_frame_by_values_to_explore(values_to_explore_by_tree, gate_features_inputs, data_frame):
+    processed_data_frame = pandas.DataFrame(columns=data_frame.columns.values, dtype=bool)
+
+    for tree_values in values_to_explore_by_tree.values():
+        tmp_df = data_frame.copy()
+        if len(tree_values) > 0:
+            for k, v in tree_values:
+                tmp_df = tmp_df.loc[tmp_df[k.to_string()] == (False if v == 0 else True)]
+
+            processed_data_frame = pandas.concat([processed_data_frame, tmp_df])
+            data_frame = data_frame.drop(tmp_df.index)
+    return processed_data_frame
 
 
 def get_batch_using_oa(data, max_input_index, oa):
-    # if max_input_index > len(oa[0]):
-    #     print("******** WARN - Orthogonal array has less attributes than inputs ********")
 
     data_batch = pandas.DataFrame(columns=data.columns.values, dtype=bool)
 
@@ -250,35 +224,38 @@ def get_batch_using_oa(data, max_input_index, oa):
     return data_batch
 
 
-def apply_new_attributes(data, max_input_index, combinations_and_gates, start_index, end_index):
-    for combination_gate_tuple_index in range(start_index, end_index):
-        max_input_index = insert_gate_as_att(data,combinations_and_gates[combination_gate_tuple_index], max_input_index)
-    return data
+def apply_new_attributes(induced, data, max_input_index, combinations_and_gates, start_index, end_index):
+    if induced > 0:
+        for combination_gate_tuple_index in range(start_index, end_index):
+            max_input_index = insert_gate_as_att(data,combinations_and_gates[combination_gate_tuple_index], max_input_index)
+    return data, max_input_index
 
 
 def generate_gate_features(inputs):
     gate_features = []
     for input in inputs:
-        gate_features.append(GateFeature(None,[input]))
+        gate_features.append(GateFeature(None, [input]))
     return gate_features
+
 
 def get_curr_values_to_explore(tree, curr_gate_feature_inputs):
     values_to_explore = []
     tree_ = tree.tree_
 
     nodes_impurity = tree_.impurity
-    max_impurity = max(nodes_impurity)
-    if max_impurity != 0:
-        gate_feature_input_list = []
-        for node_index in range(len(nodes_impurity)):
-            # in case there are several nodes with same entropy value
-            if max_impurity == nodes_impurity[node_index]:
-                explorable_node_index = node_index
-                break # don't take all equal entropies, only the first one for consistency
+    if len(nodes_impurity) > 1:
+        max_impurity = max(nodes_impurity[1:]) # get max impurity from inner nodes and not the root
+        if max_impurity != 0:
+            gate_feature_input_list = []
+            for node_index in range(1, len(nodes_impurity)):
+                # in case there are several nodes with same entropy value
+                if max_impurity == nodes_impurity[node_index]:
+                    break # don't take all equal entropies, only the first one for consistency
 
-        values_to_explore = extract_path_to_explorable_node(curr_gate_feature_inputs, tree_, node_index)
+            values_to_explore = extract_path_to_explorable_node(curr_gate_feature_inputs, tree_, node_index)
 
     return values_to_explore
+
 
 def extract_path_to_explorable_node(curr_gate_feature_inputs, tree, node_index):
     path = []
@@ -294,7 +271,7 @@ def extract_path_to_explorable_node(curr_gate_feature_inputs, tree, node_index):
 
         # converting 'not' gates to their original gate and alternating their value for consistency
         feature_gate = curr_gate_feature_inputs[tree.feature[parent_index]]
-        while isinstance(feature_gate.gate, OneNot.__class__):
+        while feature_gate.gate == OneNot:
             feature_gate = feature_gate.inputs[0] # Not gate has only one input
             parent_value = (not parent_value).__int__()
 
@@ -305,6 +282,7 @@ def extract_path_to_explorable_node(curr_gate_feature_inputs, tree, node_index):
     recursively_find_path(path, curr_gate_feature_inputs, tree, node_index)
     return path
 
+
 def get_parent_index(children_list, node_index):
     for parent_index in range(len(children_list)):
         if children_list[parent_index] == node_index:
@@ -312,187 +290,209 @@ def get_parent_index(children_list, node_index):
     return -1
 
 
-def merge_values(curr_values_to_explore, new_values_to_explore):
-    merged_values = curr_values_to_explore.copy()
-    for new_value in new_values_to_explore:
-        value_exists = False
-        for curr_value in curr_values_to_explore:
-            if new_value.__eq__(curr_value):
-                value_exists = True
-                break
-        if not value_exists:
-            merged_values.append(new_value)
-    return merged_values
-
+# def init_orthogonal_arrays(use_orthogonal_arrays):
+#
+#     def put_oa(path, strength_index, oa_by_strength_map):
+#         with open(path) as oa_file:
+#             oa_array = oa_file.read().split('\n').copy()
+#             oa_num_of_att = len(oa_array[0])
+#             oa_by_strength_map[strength_index] = OA(oa_array, oa_num_of_att)
+#
+#     oa_by_strength_map = {}
+#     if use_orthogonal_arrays:
+#         oa_path = "E:\\ise_masters\\gal_thesis\\data_sets\\oa\\"
+#         put_oa(oa_path + "strength_2\\11_att.txt", 2, oa_by_strength_map)
+#         put_oa(oa_path + "strength_3\\12_att.txt", 3, oa_by_strength_map)
+#     return oa_by_strength_map
 
 def init_orthogonal_arrays(use_orthogonal_arrays):
 
     def put_oa(path, strength_index, oa_by_strength_map):
-        with open(path) as oa_file:
-            oa_array = oa_file.read().split('\n').copy()
-            oa_num_of_att = len(oa_array[0])
-            oa_by_strength_map[strength_index] = OA(oa_array, oa_num_of_att)
+        new_oa = read_oa(path)
+        if oa_by_strength_map.__contains__(strength_index):
+            oa_by_strength_map[strength_index].append(new_oa)
+        else:
+            oa_by_strength_map[strength_index] = [new_oa]
 
     oa_by_strength_map = {}
     if use_orthogonal_arrays:
         oa_path = "E:\\ise_masters\\gal_thesis\\data_sets\\oa\\"
-        put_oa(oa_path + "strength_2\\11_att.txt", 2, oa_by_strength_map)
-        put_oa(oa_path + "strength_3\\12_att.txt", 3, oa_by_strength_map)
+        oa_files_list = [f for f in listdir(oa_path) if isfile(join(oa_path, f))]
+        for file_name in oa_files_list:
+            put_oa(oa_path + file_name, get_strength(file_name), oa_by_strength_map)
     return oa_by_strength_map
 
 
-def trim_oa_to_fit_inputs(oa, input_size):
-    trimmed_oa_array = [oa_line[:input_size] for oa_line in oa.array.copy()]
-    return OA(trimmed_oa_array, input_size)
+def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, induced, gate_features_inputs,
+                    values_to_explore_by_tree, number_of_outputs, should_randomize_remaining_data):
+    if len(orig_data) > 0:
+        # apply over the previous data the last new added feature
+        curr_data, _ = apply_new_attributes(induced, curr_data, non_not_max_input_index, gate_features_inputs,
+                                            non_not_max_input_index, non_not_max_input_index + 1)
+        # Add last iteration's not gate
+        orig_data, _ = apply_new_attributes(induced - 1, orig_data, len(orig_data.columns.values) - number_of_outputs,
+                                            gate_features_inputs, len(gate_features_inputs) - 1, len(gate_features_inputs))
+        # Add new added att
+        orig_data, non_not_max_input_index = apply_new_attributes(induced, orig_data, non_not_max_input_index, gate_features_inputs,
+                                                                  non_not_max_input_index, non_not_max_input_index + 1)
+        tmp_data = orig_data
+        if ALCS_conf.use_explore_nodes & len(values_to_explore_by_tree) > 0:
+            tmp_data = get_data_frame_by_values_to_explore(values_to_explore_by_tree, gate_features_inputs, orig_data)
+        # take new sample out of the rest of the data
+        if should_randomize_remaining_data:  # Random batch
+            batch_size = ALCS_conf.random_batch_size if len(tmp_data) > ALCS_conf.random_batch_size else len(tmp_data)
+            if batch_size > 0:
+                new_sample = tmp_data.sample(n=batch_size, random_state=2018)
+                orig_data = orig_data.drop(new_sample.index)
+                data = pandas.concat([curr_data, new_sample])
+            else:  # no instances to sample from
+                # apply over the previous data the last new added feature
+                data = curr_data
+        else:  # All
+            data = pandas.concat([curr_data, tmp_data])
+            orig_data = orig_data.drop(tmp_data.index)
+    else:
+        # apply over the previous data the last new added feature
+        data, non_not_max_input_index = apply_new_attributes(induced, curr_data, non_not_max_input_index,
+                                                gate_features_inputs, non_not_max_input_index, non_not_max_input_index + 1)
+    return orig_data, data, non_not_max_input_index
 
 
-if __name__ == '__main__':
+def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_index, max_input_index, curr_oa, induced,
+                           oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs):
 
-    #######################
-    # parameters
-    #######################
-    # fileName = "E:\\ise_masters\\gal_thesis\\data_sets\\full_adder.tab"
-    fileName = TRUTH_TABLE_PATH_74182
+    if ALCS_conf.use_orthogonal_arrays:
+        next_strength = str(induced + ALCS_conf.min_oa_strength)
+        if oa_by_strength_map.__contains__(next_strength):
+            # Add last iteration's not gate
+            orig_data, _ = apply_new_attributes(induced - 1, orig_data, len(orig_data.columns.values) - number_of_outputs,
+                                                gate_features_inputs, len(gate_features_inputs) - 1, len(gate_features_inputs))
+            orig_data, non_not_max_input_index = apply_new_attributes(induced, orig_data, non_not_max_input_index, gate_features_inputs,
+                                             non_not_max_input_index, non_not_max_input_index + 1)
+            next_oa = trim_oa_to_fit_inputs(get_nearest_oa(oa_by_strength_map[next_strength], non_not_max_input_index), non_not_max_input_index)
+            curr_oa = process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore_by_tree)
+            data = get_batch_using_oa(orig_data, non_not_max_input_index, curr_oa)
+        else:
+            if len(curr_oa) > 0:  # first time to get data without OA
+                curr_data = get_batch_using_oa(orig_data, non_not_max_input_index, curr_oa)
+                curr_oa = []  # emptying list to not use it in next iterations anymore
+                orig_data = orig_data.drop(curr_data.index)
+                # Add last iteration's not gate
+                curr_data, _ = apply_new_attributes(induced - 1, curr_data,
+                                                    len(curr_data.columns.values) - number_of_outputs,
+                                                    gate_features_inputs, len(gate_features_inputs) - 1,
+                                                    len(gate_features_inputs))
 
-    possible_gates = [TwoOr, TwoAnd, OneNot, TwoXor]
-    subset_min = 1
-    subset_max = 2
-    num_of_iterations = 10
-    remove_unused_attributes = False  # should be used to boost computational complexity
-    use_orthogonal_arrays = True
-    random_batch_size = 70
-    use_explore_nodes = False
-    min_oa_strength = 2
-    max_oa_strength = 3
-    print("Working on:" + fileName)
+            orig_data, data, non_not_max_input_index = get_random_data(ALCS_conf, orig_data, curr_data,
+                            non_not_max_input_index, induced, gate_features_inputs, values_to_explore_by_tree,
+                            number_of_outputs, ALCS_conf.randomize_remaining_data)
 
-    start_time = time.time()
-    orig_data = pandas.read_csv(fileName, delimiter='\t', header=0)
-    preprocess(orig_data)
+    else:  # Random Batch
+        orig_data, data, non_not_max_input_index = get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index,
+                                                       induced, gate_features_inputs, values_to_explore_by_tree, number_of_outputs, False)
+
+    # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
+    if induced != 0:
+        max_input_index = len(data.columns.values) - number_of_outputs
+        gate_feature = GateFeature(OneNot, [gate_features_inputs[non_not_max_input_index - 1]])
+        max_input_index = insert_gate_as_att(data, gate_feature, max_input_index)
+        gate_features_inputs.append(gate_feature)
+
+    return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa
+
+
+def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
 
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
-    print(str(number_of_outputs) + " outputs: " + str(outputs))
 
     orig_max_input_index = len(orig_data.columns.values) - number_of_outputs
     inputs = orig_data.columns[:orig_max_input_index]
-    oa_by_strength_map = init_orthogonal_arrays(use_orthogonal_arrays)
 
+    print(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
 
-    print ("Initial data:")
-    print (orig_data)
-    print ("##################")
+    print("Initial data:")
+    print(orig_data)
+    print("##################")
 
     induced = 0
     gate_features_inputs = generate_gate_features(inputs) # init the starting inputs as feature gates for later process in the tree nodes
     curr_oa = None
-    values_to_explore = []
+    values_to_explore_by_tree = {}
 
     # FIRST ADD THE NOT GATE FOR ALL CURRENT INPUT
     not_gate_arguments = itertools.combinations(gate_features_inputs, 1)
     max_input_index = orig_max_input_index
+    non_not_max_input_index = orig_max_input_index
     for not_gate_argument_tuple in not_gate_arguments:
         gate_feature = GateFeature(OneNot, [not_gate_argument_tuple[0]])
         max_input_index = insert_gate_as_att(orig_data, gate_feature, max_input_index)
         gate_features_inputs.append(gate_feature)
 
-    if not use_orthogonal_arrays:# ??????? needed?
-        data = orig_data
+    data = pandas.DataFrame(columns=orig_data.columns.values, dtype=bool)
 
-    while induced < num_of_iterations:
+    while induced < ALCS_configuration.max_num_of_iterations:
         best_quality = 10000
         best_attribute_name = ""
         best_attribute_gates_map = {}
         best_gate_feature = None
 
-        print("\n**** iteration #: " + str(induced) + " ****\n")
-        if use_orthogonal_arrays:
-            next_strength = induced + min_oa_strength
-            if oa_by_strength_map.__contains__(next_strength):
-                if induced != 0:
-                    orig_data = apply_new_attributes(orig_data, orig_max_input_index, gate_features_inputs, orig_max_input_index, orig_max_input_index + 1)
-                    orig_max_input_index += 1
-                next_oa = trim_oa_to_fit_inputs(oa_by_strength_map[next_strength], orig_max_input_index)
-                curr_oa = process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore)
-                data = get_batch_using_oa(orig_data, orig_max_input_index, curr_oa)
-            else:
-                data = apply_new_attributes(data, orig_max_input_index, gate_features_inputs, orig_max_input_index, orig_max_input_index + 1)
-                orig_max_input_index += 1
-        else: #Random Batch
-            # take new sample out of the rest of the data
-            new_sample = orig_data.sample(n=random_batch_size, random_state=2018)
-            # apply over the new sample the added features from all previous iterations
-            new_sample = apply_new_attributes(new_sample, orig_max_input_index, gate_features_inputs, orig_max_input_index, orig_max_input_index + 1)
-            # apply over the previous data the last new added feature
-            data = apply_new_attributes(data, orig_max_input_index, gate_features_inputs, orig_max_input_index, orig_max_input_index + 1)
-            data = pandas.concat([data, new_sample])
-
-        # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
-        if induced != 0:
-            max_input_index = len(data.columns.values) - number_of_outputs
-            not_gate_new_arg_tuple = (data.columns[orig_max_input_index - 1],)
-            gate_feature = GateFeature(OneNot, [gate_features_inputs[orig_max_input_index - 1]])
-            max_input_index = insert_gate_as_att(data, gate_feature, max_input_index)
-            gate_features_inputs.append(gate_feature)
-
-        print('**** # of instances: ' + str(len(data)) + ' ****')
+        orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa = \
+            get_data_for_iteration(ALCS_configuration, orig_data, data, non_not_max_input_index, max_input_index, curr_oa,
+                                   induced, oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs)
+        print("\n**** iteration #: " + str(induced) + ", " + "# of instances: " + str(len(data)) + " ****\n")
 
         # Now working on all other gates
         possible_arguments_combinations = []
 
         #appends all combinations of different sizes of subsets
-        for i in range(max(subset_min, 2), subset_max + 1):
+        for i in range(max(ALCS_configuration.subset_min, 2), ALCS_configuration.subset_max + 1):
             possible_arguments_combinations += itertools.combinations(gate_features_inputs, i)
 
         #for each combination
         for curr_arg_combination in possible_arguments_combinations:
-            #for each possiible gate
-            for possible_gate in possible_gates:
+            #for each possible gate
+            for possible_gate in ALCS_configuration.possible_gates:
                 if possible_gate.numInputs == len(curr_arg_combination):
-                    new_gate_feature = GateFeature(possible_gate, curr_arg_combination)
+                    new_gate_feature = GateFeature(possible_gate, list(curr_arg_combination))
                     new_attribute_name = new_gate_feature.to_string()
                     if (not data.__contains__(new_attribute_name)):
                         new_column = get_transformed_att_value(data, curr_arg_combination, possible_gate)
-                        data.insert(orig_max_input_index, new_attribute_name, new_column)
+                        data.insert(non_not_max_input_index, new_attribute_name, new_column)
 
                         tree_quality = 0
                         inputs = data.columns[:max_input_index + 1]
                         fitted_trees = {}
+                        # fit_start = time.time()
                         for output_index in range(len(outputs)):
                             tree_data = DecisionTreeClassifier(random_state=0, criterion="entropy")
                             tree_data.fit(data[inputs], data[outputs[output_index]])
                             tree_quality += tree_data.tree_.node_count
                             fitted_trees[outputs[output_index]] = tree_data
 
-                        # print("checking "  + str(new_attribute_name) + " complexity over all trees is: " + str(tree_quality))
                         if (tree_quality < best_quality) or ((tree_quality == best_quality) and (is_better_combination(new_attribute_name, best_attribute_gates_map))):
                             best_quality = tree_quality
                             best_gate_feature = new_gate_feature
                             best_attribute_name = new_attribute_name
                             best_attribute_gates_map = get_gates_map(best_attribute_name)
-                            #best_trees_input_dump = inputs
                             best_trees_dump = fitted_trees
                         del data[new_attribute_name]
-
         # Now check if there is something new to add
-        if best_quality < 10000:
+        if best_quality < 1000:
             induced += 1
-            #data = best_attribute_table
-            gate_features_inputs.insert(orig_max_input_index, best_gate_feature)
+            gate_features_inputs.insert(non_not_max_input_index, best_gate_feature)
             print ("============ Selected Gate is: %s" % (best_attribute_name))
-            values_to_explore = [] # node values ordered from root to leaf
+            values_to_explore_dict = {} # node values ordered from root to leaf
             for output, tree in best_trees_dump.items():
                 print("\ntree for " + str(output))
                 print_tree_to_code(tree, gate_features_inputs)
-                if use_explore_nodes:
-                    values_to_explore = merge_values(values_to_explore, get_curr_values_to_explore(tree, gate_features_inputs))
-
+                if ALCS_configuration.use_explore_nodes:
+                    values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, gate_features_inputs)
             print ("=============")
-            # print ("The new data domain is: %s" % (data.columns.values))
-            print("=============")
+        else:
+            raise Exception('Current iteration did not add any new attribute')
 
-
-        if not use_orthogonal_arrays and best_quality <= 3 * number_of_outputs:
+        if not ALCS_configuration.use_orthogonal_arrays and best_quality <= 3 * number_of_outputs:
             #decision stump
             break
 
@@ -509,5 +509,25 @@ if __name__ == '__main__':
         #     data = temp_data
         #     print ("=======> The new ***reduced**** data domain is: %s" % (data.columns.values))
 
-    end_time = time.time()
-    print("took: %.5f sec" % (end_time - start_time))
+
+if __name__ == '__main__':
+    circuit_name = "FullAdder"
+    file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
+    possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
+    # , ThreeAnd, FourAnd, ThreeOr, FourOr, TwoNor, ThreeNor, FourNor
+
+    orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
+    ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name,
+                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=20,
+                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
+                                    random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
+
+    print("Working on: " + ALCS_configuration.file_name)
+
+    oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
+
+    start_time = int(round(time.time() * 1000))
+    run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
+    end_time = int(round(time.time() * 1000))
+
+    print("took: %.5f sec" % ((end_time - start_time)/1000))

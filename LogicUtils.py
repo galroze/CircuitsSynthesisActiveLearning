@@ -1,5 +1,25 @@
 import pandas
+import numpy as np
+import sys
 
+
+class OA:
+    def __init__(self, array, num_of_att):
+        self.array = array
+        self.num_of_att = num_of_att
+
+
+def read_oa(path):
+    with open(path) as oa_file:
+        oa_array = oa_file.read().split('\n').copy()
+    oa_num_of_att = len(oa_array[0])
+    new_oa = OA(oa_array, oa_num_of_att)
+    return new_oa
+
+
+def trim_oa_to_fit_inputs(oa, input_size):
+    trimmed_oa_array = [oa_line[:input_size] for oa_line in oa.array.copy()]
+    return OA(trimmed_oa_array, input_size)
 
 
 def get_transformed_att_value (data, att_names, gate):
@@ -23,8 +43,27 @@ def get_transformed_att_value (data, att_names, gate):
             transformed_column.append(False)
     return transformed_column
 
+
 def get_input_names(data):
     return data.columns[pandas.Series(data.columns).str.startswith('i')]
 
+
 def get_output_names(data):
     return data.columns[pandas.Series(data.columns).str.startswith('o')]
+
+
+def get_nearest_oa(oa_list, value):
+    possible_att_values = [oa.num_of_att for oa in oa_list]
+    possible_att_values = np.asarray(possible_att_values)
+
+    diff_array = possible_att_values - value
+    diff_array[diff_array < 0] = sys.maxsize # get only att higher than value
+    nearest_value_index = diff_array.argmin()
+    if nearest_value_index == sys.maxsize:
+        raise ValueError('no OA found for data')
+    return oa_list[nearest_value_index]
+
+
+def get_strength(file_name):
+    split_name = file_name.split('_')
+    return split_name[len(split_name) - 1].split('.txt')[0]
