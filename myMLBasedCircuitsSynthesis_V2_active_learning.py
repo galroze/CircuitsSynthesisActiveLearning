@@ -509,17 +509,6 @@ def get_component_distribution_metric(expected_gates_map, best_trees_dump, best_
     return comp_dist_metric_map
 
 
-def write_metrics_to_csv(metric_dict):
-    with open('metrics.csv', 'w', newline='') as csvfile:
-        fieldnames = ['iteration #', 'metric_name', 'metric']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-        writer.writeheader()
-        for iteration, metrics in metric_dict.items():
-            for metric_name, metric in metrics.items():
-                writer.writerow({'iteration #': iteration, 'metric_name': metric_name, 'metric': metric})
-
-
 if __name__ == '__main__':
     circuit_name = "c17"
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
