@@ -6,7 +6,7 @@ from LogicUtils import *
 logic_types = {OneNot.name: OneNot, TwoXor.name: TwoXor, TwoAnd.name: TwoAnd, ThreeAnd.name: ThreeAnd,
                FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, TwoOr.name: TwoOr, ThreeOr.name: ThreeOr,
                FourOr.name: FourOr, TwoNor.name: TwoNor, ThreeNor.name: ThreeNor, FourNor.name: FourNor,
-               FiveNor.name: FiveNor, NotAnd.name: NotAnd}
+               FiveNor.name: FiveNor, NotAnd.name: NotAnd, Buffer.name: Buffer}
 basic_gates = {OneNot.name, TwoXor.name, TwoAnd.name, TwoOr.name}
 
 

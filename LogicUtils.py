@@ -4,22 +4,24 @@ import sys
 
 
 class OA:
-    def __init__(self, array, num_of_att):
+    def __init__(self, array, num_of_att, is_optimal):
         self.array = array
         self.num_of_att = num_of_att
+        self.is_optimal = is_optimal
 
 
 def read_oa(path):
     with open(path) as oa_file:
         oa_array = oa_file.read().split('\n').copy()
     oa_num_of_att = len(oa_array[0])
-    new_oa = OA(oa_array, oa_num_of_att)
+    splitted_path = path.split('\\')
+    new_oa = OA(oa_array, oa_num_of_att, False if splitted_path[len(splitted_path) - 1].startswith('GEN') else True)
     return new_oa
 
 
 def trim_oa_to_fit_inputs(oa, input_size):
     trimmed_oa_array = [oa_line[:input_size] for oa_line in oa.array.copy()]
-    return OA(trimmed_oa_array, input_size)
+    return OA(trimmed_oa_array, input_size, oa.is_optimal)
 
 
 def get_transformed_att_value (data, att_names, gate):

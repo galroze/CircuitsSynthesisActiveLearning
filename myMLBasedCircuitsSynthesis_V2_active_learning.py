@@ -1,20 +1,24 @@
 from os import listdir
 from os.path import isfile, join
 import itertools
+import git
 import time
+import csv
 import re
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import _tree
 from LogicUtils import *
 from LogicTypes import *
-
+from dataSystemsUtil import generate_expected_gates_map
+from Experiments.ExperimentServiceImpl import write_experiment
 
 class ActiveLearningCircuitSynthesisConfiguration:
 
-    def __init__(self, file_name, possible_gates, subset_min, subset_max, max_num_of_iterations, use_orthogonal_arrays,
-                 use_explore_nodes, randomize_remaining_data, random_batch_size, min_oa_strength):
+    def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
+                 use_orthogonal_arrays, use_explore_nodes, randomize_remaining_data, random_batch_size, min_oa_strength):
 
         self.file_name = file_name
+        self.total_num_of_instances = total_num_of_instances
         self.possible_gates = possible_gates
         self.subset_min = subset_min
         self.subset_max = subset_max
@@ -27,37 +31,6 @@ class ActiveLearningCircuitSynthesisConfiguration:
         self.min_oa_strength = min_oa_strength
 
 
-class GateFeature:
-    def __init__(self, gate, inputs):
-        self.gate = gate
-        self.inputs = inputs
-
-    def to_string(self):
-        to_string = ""
-        if self.gate is not None:
-            to_string += str(self.gate.name) + "("
-            for input_index in range(len(self.inputs)):
-                if input_index > 0: # add comma for all inputs but the first input
-                    to_string += ","
-                if isinstance(self.inputs[input_index], str): # only argument
-                    to_string += str(self.inputs[input_index])
-                else:
-                    to_string += str(self.inputs[input_index].to_string())
-            to_string += ")"
-        else: # only argument
-            return self.inputs[0]
-
-        return to_string
-
-    def __key(self):
-        # return (self.attr_a, self.attr_b, self.attr_c)
-        return self.to_string()
-
-    def __hash__(self):
-        return hash(self.__key())
-
-    def __eq__(self, other):
-        return isinstance(self, type(other)) and self.__key() == other.__key()
 
 
 def insert_gate_as_att(data, gate_feature, max_input_index):
@@ -94,6 +67,15 @@ def get_tree_feature_names(gate_features, tree):
         for i in tree_.feature
     ]
     return feature_name
+
+
+def get_tree_features(gate_features, tree):
+    tree_ = tree.tree_
+    features = [
+        gate_features[i] if i != _tree.TREE_UNDEFINED else "undefined!"
+        for i in tree_.feature
+    ]
+    return features
 
 
 def get_total_gates(gates_map):
@@ -290,21 +272,6 @@ def get_parent_index(children_list, node_index):
     return -1
 
 
-# def init_orthogonal_arrays(use_orthogonal_arrays):
-#
-#     def put_oa(path, strength_index, oa_by_strength_map):
-#         with open(path) as oa_file:
-#             oa_array = oa_file.read().split('\n').copy()
-#             oa_num_of_att = len(oa_array[0])
-#             oa_by_strength_map[strength_index] = OA(oa_array, oa_num_of_att)
-#
-#     oa_by_strength_map = {}
-#     if use_orthogonal_arrays:
-#         oa_path = "E:\\ise_masters\\gal_thesis\\data_sets\\oa\\"
-#         put_oa(oa_path + "strength_2\\11_att.txt", 2, oa_by_strength_map)
-#         put_oa(oa_path + "strength_3\\12_att.txt", 3, oa_by_strength_map)
-#     return oa_by_strength_map
-
 def init_orthogonal_arrays(use_orthogonal_arrays):
 
     def put_oa(path, strength_index, oa_by_strength_map):
@@ -360,7 +327,7 @@ def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, in
 
 def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_index, max_input_index, curr_oa, induced,
                            oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs):
-
+    oa_is_optimal = True
     if ALCS_conf.use_orthogonal_arrays:
         next_strength = str(induced + ALCS_conf.min_oa_strength)
         if oa_by_strength_map.__contains__(next_strength):
@@ -369,7 +336,9 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
                                                 gate_features_inputs, len(gate_features_inputs) - 1, len(gate_features_inputs))
             orig_data, non_not_max_input_index = apply_new_attributes(induced, orig_data, non_not_max_input_index, gate_features_inputs,
                                              non_not_max_input_index, non_not_max_input_index + 1)
-            next_oa = trim_oa_to_fit_inputs(get_nearest_oa(oa_by_strength_map[next_strength], non_not_max_input_index), non_not_max_input_index)
+            nearest_oa = get_nearest_oa(oa_by_strength_map[next_strength], non_not_max_input_index)
+            oa_is_optimal = nearest_oa.is_optimal
+            next_oa = trim_oa_to_fit_inputs(nearest_oa, non_not_max_input_index)
             curr_oa = process_oa(curr_oa, gate_features_inputs, next_oa, values_to_explore_by_tree)
             data = get_batch_using_oa(orig_data, non_not_max_input_index, curr_oa)
         else:
@@ -398,10 +367,10 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
         max_input_index = insert_gate_as_att(data, gate_feature, max_input_index)
         gate_features_inputs.append(gate_feature)
 
-    return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa
+    return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal
 
 
-def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
+def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_map):
 
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
@@ -419,6 +388,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
     gate_features_inputs = generate_gate_features(inputs) # init the starting inputs as feature gates for later process in the tree nodes
     curr_oa = None
     values_to_explore_by_tree = {}
+    metrics_by_iteration = {}
 
     # FIRST ADD THE NOT GATE FOR ALL CURRENT INPUT
     not_gate_arguments = itertools.combinations(gate_features_inputs, 1)
@@ -437,10 +407,11 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
         best_attribute_gates_map = {}
         best_gate_feature = None
 
-        orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa = \
+        orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal = \
             get_data_for_iteration(ALCS_configuration, orig_data, data, non_not_max_input_index, max_input_index, curr_oa,
                                    induced, oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs)
-        print("\n**** iteration #: " + str(induced) + ", " + "# of instances: " + str(len(data)) + " ****\n")
+        num_of_insances = len(data)
+        print("\n**** iteration #: " + str(induced) + ", " + "# of instances: " + str(num_of_insances) + " ****\n")
 
         # Now working on all other gates
         possible_arguments_combinations = []
@@ -492,42 +463,89 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
         else:
             raise Exception('Current iteration did not add any new attribute')
 
-        if not ALCS_configuration.use_orthogonal_arrays and best_quality <= 3 * number_of_outputs:
-            #decision stump
-            break
 
-        # should be refactored if needed!!!
-        # if remove_unused_attributes:
-        #     feature_set = set()
-        #     for output, tree in best_trees_dump.items():
-        #         feature_set.update(set(get_tree_feature_names(best_trees_input_dump, tree)))
-        #     temp_data = data
-        #     for curr_att in data.columns.values:
-        #         if (not feature_set.__contains__(curr_att)):
-        #             if (curr_att[0] != "_") and (curr_att != best_attribute_name):
-        #                 del temp_data[curr_att]
-        #     data = temp_data
-        #     print ("=======> The new ***reduced**** data domain is: %s" % (data.columns.values))
+
+        metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
+                                        'component_distribution': get_component_distribution_metric(expected_gates_map,
+                                           best_trees_dump, best_quality, number_of_outputs, gate_features_inputs),
+                                         'oa_is_optimal': oa_is_optimal}
+
+    return metrics_by_iteration
+
+def generate_gates_map(trees_dump, gate_features):
+    curr_gates_map = {}
+    # all trees are decision stumps, merge them all to distinct gates with inputs
+    for output, tree in trees_dump.items():
+        root_feature = get_tree_features(gate_features, tree)[0]  # there is only one feature in the root
+        add_gates(curr_gates_map, root_feature)
+    return curr_gates_map
+
+
+def add_gates(gates_map, gate):
+    if gate != "undefined!": # all instances are of the same class - no tree at all
+        curr_gate = gate.gate
+        if curr_gate is not None: # actual gate and not a dummy attribute gate
+            if not gates_map.__contains__(curr_gate.name):
+                gates_map[curr_gate.name] = set()
+            gates_map[curr_gate.name].add(gate)
+
+            for curr_input in gate.inputs:
+                add_gates(gates_map, curr_input)
+
+
+def get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features):
+    comp_dist_metric_map = {}
+    if best_quality <= 3 * number_of_outputs:
+        curr_gates_map = generate_gates_map(best_trees_dump, gate_features)
+
+        for expected_logic_gate, expected_gate_set in expected_gates_map.items():
+            curr_gate_set = curr_gates_map.get(expected_logic_gate)
+            comp_dist_metric_map[expected_logic_gate] = len(expected_gate_set) / len(curr_gate_set) if curr_gate_set is not None else 0
+
+        for curr_gate, curr_gate_set in curr_gates_map.items(): # gate exist in current iteration but not in expected
+            if not comp_dist_metric_map.__contains__(curr_gate):
+                comp_dist_metric_map[curr_gate] = 0
+
+    return comp_dist_metric_map
+
+
+def write_metrics_to_csv(metric_dict):
+    with open('metrics.csv', 'w', newline='') as csvfile:
+        fieldnames = ['iteration #', 'metric_name', 'metric']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for iteration, metrics in metric_dict.items():
+            for metric_name, metric in metrics.items():
+                writer.writerow({'iteration #': iteration, 'metric_name': metric_name, 'metric': metric})
 
 
 if __name__ == '__main__':
-    circuit_name = "FullAdder"
+    circuit_name = "c17"
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
-    # , ThreeAnd, FourAnd, ThreeOr, FourOr, TwoNor, ThreeNor, FourNor
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
-    ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name,
-                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=20,
+    ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
+                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=5,
                                     use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
 
     print("Working on: " + ALCS_configuration.file_name)
 
     oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
+    expected_gates_map = generate_expected_gates_map(circuit_name)
 
     start_time = int(round(time.time() * 1000))
-    run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
+    metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_map)
     end_time = int(round(time.time() * 1000))
 
-    print("took: %.5f sec" % ((end_time - start_time)/1000))
+    run_time = (end_time - start_time)/1000
+    print("took: %.5f sec" % run_time)
+
+    # git version info
+    repo = git.Repo(search_parent_directories=True)
+    current_version = repo.head.object.hexsha
+    version_time = repo.head.object.committed_datetime
+
+    write_experiment(current_version, run_time, ALCS_configuration, metrics_by_iteration)

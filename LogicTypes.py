@@ -4,6 +4,40 @@ import operator
 TRUTH_TABLE_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\truth_tables\\"
 CIRCUIT_SYSTEM_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\Data_Systems\\"
 
+
+class GateFeature:
+    def __init__(self, gate, inputs):
+        self.gate = gate
+        self.inputs = inputs
+
+    def to_string(self):
+        to_string = ""
+        if self.gate is not None:
+            to_string += str(self.gate.name) + "("
+            for input_index in range(len(self.inputs)):
+                if input_index > 0: # add comma for all inputs but the first input
+                    to_string += ","
+                if isinstance(self.inputs[input_index], str): # only argument
+                    to_string += str(self.inputs[input_index])
+                else:
+                    to_string += str(self.inputs[input_index].to_string())
+            to_string += ")"
+        else: # only argument
+            return self.inputs[0]
+
+        return to_string
+
+    def __key(self):
+        # return (self.attr_a, self.attr_b, self.attr_c)
+        return self.to_string()
+
+    def __hash__(self):
+        return hash(self.__key())
+
+    def __eq__(self, other):
+        return isinstance(self, type(other)) and self.__key() == other.__key()
+
+
 class OneNot:
     name = "inverter"
     numInputs = 1
@@ -78,7 +112,7 @@ class NotAnd:
 
     @staticmethod
     def f(value1, value2):
-        return not operator.and_(value1, value2)
+        return OneNot.f(operator.and_(value1, value2))
 
 
 class TwoOr:
@@ -156,3 +190,14 @@ class FiveNor:
     @staticmethod
     def f(value1, value2, value3, value4, value5):
         return not operator.or_(operator.or_(operator.or_(value1, value2), operator.or_(value3, value4)), value5)
+
+
+class Buffer:
+    name = "buffer"
+    numInputs = 1
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1):
+        return value1
