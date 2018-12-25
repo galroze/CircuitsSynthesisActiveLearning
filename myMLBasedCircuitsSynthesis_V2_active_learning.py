@@ -532,6 +532,8 @@ def create_system_description(best_trees_dump, best_quality, number_of_outputs, 
             if gate_type != 'basic_inputs':
                 comp_distribution_map[gate_type] = len(gate_type_set)
 
+        for comp in comp_distribution_map.keys():
+            comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - len(curr_gates_map['basic_inputs']) - number_of_outputs)
         for degree, degree_count in degree_distribution.items():
             avg_vertex_degree += int(degree) * degree_count
         avg_vertex_degree /= sum(degree_distribution.values())
