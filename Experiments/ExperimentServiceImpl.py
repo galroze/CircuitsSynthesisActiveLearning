@@ -28,12 +28,17 @@ def write_experiment(git_version, run_time, ALCS_configuration, metrics_by_itera
     experiment_fk = ExperimentsDAO.insert_experiment(git_version, configuration_fk, run_time)
 
     for induced, metric in metrics_by_iteration.items():
-        IterationsDAO.insert_iteration(experiment_fk, induced,
-                                       get_metric_to_persist(metric['component_distribution'], TwoAnd.name),
-                                       get_metric_to_persist(metric['component_distribution'], TwoOr.name),
-                                       get_metric_to_persist(metric['component_distribution'], OneNot.name),
-                                       get_metric_to_persist(metric['component_distribution'], TwoXor.name),
-                                       convert_boolean(metric["oa_is_optimal"]), metric["num_of_instances"])
+        sys_desc = metric['sys_description']
+        IterationsDAO.insert_iteration(experiment_fk, induced, metric["num_of_instances"],
+                                       sys_desc['edges'],
+                                       sys_desc['vertices'],
+                                       get_metric_to_persist(sys_desc['comp_distribution_map'], TwoAnd.name),
+                                       get_metric_to_persist(sys_desc['comp_distribution_map'], TwoOr.name),
+                                       get_metric_to_persist(sys_desc['comp_distribution_map'], OneNot.name),
+                                       get_metric_to_persist(sys_desc['comp_distribution_map'], TwoXor.name),
+                                       ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in sys_desc['degree_distribution'].items()]),
+                                       sys_desc['avg_vertex_degree'],
+                                       convert_boolean(metric["oa_is_optimal"]))
 
 
 def convert_boolean(value):

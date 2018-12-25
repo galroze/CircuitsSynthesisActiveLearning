@@ -8,7 +8,10 @@ CIRCUIT_SYSTEM_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\Data_Sy
 class GateFeature:
     def __init__(self, gate, inputs):
         self.gate = gate
-        self.inputs = inputs
+        self.inputs = []
+        for inp in inputs:
+            self.inputs.append(inp if isinstance(inp, str) else inp.copy())
+        self.outputs = set()
 
     def to_string(self):
         to_string = ""
@@ -36,6 +39,9 @@ class GateFeature:
 
     def __eq__(self, other):
         return isinstance(self, type(other)) and self.__key() == other.__key()
+
+    def copy(self):
+        return GateFeature(self.gate, [inp if isinstance(inp, str) else inp.copy() for inp in self.inputs])
 
 
 class OneNot:

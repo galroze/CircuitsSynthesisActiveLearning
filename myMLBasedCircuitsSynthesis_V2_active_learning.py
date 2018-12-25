@@ -464,11 +464,12 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_m
             raise Exception('Current iteration did not add any new attribute')
 
 
+        sys_description = create_system_description(best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
 
         metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
-                                        'component_distribution': get_component_distribution_metric(expected_gates_map,
-                                           best_trees_dump, best_quality, number_of_outputs, gate_features_inputs),
+                                        'sys_description': sys_description,
                                          'oa_is_optimal': oa_is_optimal}
+        # get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
 
     return metrics_by_iteration
 
@@ -477,36 +478,78 @@ def generate_gates_map(trees_dump, gate_features):
     # all trees are decision stumps, merge them all to distinct gates with inputs
     for output, tree in trees_dump.items():
         root_feature = get_tree_features(gate_features, tree)[0]  # there is only one feature in the root
-        add_gates(curr_gates_map, root_feature)
+        add_gates(curr_gates_map, root_feature, output)
     return curr_gates_map
 
 
-def add_gates(gates_map, gate):
+def get_gate_from_set(gate, set):
+    for item in set:
+        if item == gate:
+            return item
+
+
+def add_gates(gates_map, gate, output):
+
     if gate != "undefined!": # all instances are of the same class - no tree at all
         curr_gate = gate.gate
-        if curr_gate is not None: # actual gate and not a dummy attribute gate
-            if not gates_map.__contains__(curr_gate.name):
-                gates_map[curr_gate.name] = set()
-            gates_map[curr_gate.name].add(gate)
+        curr_gate_name = 'basic_inputs' if curr_gate is None else curr_gate.name
 
+        if not gates_map.__contains__(curr_gate_name):
+            gates_map[curr_gate_name] = set()
+
+        if gate in gates_map[curr_gate_name]:
+            existing_gate = get_gate_from_set(gate, gates_map[curr_gate_name])
+            existing_gate.outputs.add(output)
+            gates_map[curr_gate_name].add(existing_gate)
+        else:
+            gate.outputs.update([output])
+            gates_map[curr_gate_name].add(gate)
+
+        if curr_gate_name != 'basic_inputs':
             for curr_input in gate.inputs:
-                add_gates(gates_map, curr_input)
+                add_gates(gates_map, curr_input, gate)
 
 
-def get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features):
-    comp_dist_metric_map = {}
+def create_system_description(best_trees_dump, best_quality, number_of_outputs, gate_features):
+
+    vertices = 0
+    edges = 0
+    degree_distribution = {}
+    comp_distribution_map = {}
+    avg_vertex_degree = 0
     if best_quality <= 3 * number_of_outputs:
         curr_gates_map = generate_gates_map(best_trees_dump, gate_features)
+        vertices += number_of_outputs
+        degree_distribution[1] = number_of_outputs # init nodes of degree 1 for all outputs
+        for gate_type, gate_type_set in curr_gates_map.items():
+            vertices += len(gate_type_set)
+            for gate in gate_type_set:
+                edges += len(gate.outputs)
+                curr_degree = len(gate.outputs) + (len(gate.inputs) if gate.gate is not None else 0)
+                if not degree_distribution.__contains__(curr_degree):
+                    degree_distribution[curr_degree] = 0
+                degree_distribution[curr_degree] += 1
+            if gate_type != 'basic_inputs':
+                comp_distribution_map[gate_type] = len(gate_type_set)
 
-        for expected_logic_gate, expected_gate_set in expected_gates_map.items():
-            curr_gate_set = curr_gates_map.get(expected_logic_gate)
-            comp_dist_metric_map[expected_logic_gate] = len(expected_gate_set) / len(curr_gate_set) if curr_gate_set is not None else 0
+        for degree, degree_count in degree_distribution.items():
+            avg_vertex_degree += int(degree) * degree_count
+        avg_vertex_degree /= sum(degree_distribution.values())
 
-        for curr_gate, curr_gate_set in curr_gates_map.items(): # gate exist in current iteration but not in expected
-            if not comp_dist_metric_map.__contains__(curr_gate):
-                comp_dist_metric_map[curr_gate] = 0
 
-    return comp_dist_metric_map
+    return {'edges': edges, 'vertices': vertices, 'comp_distribution_map': comp_distribution_map, 'degree_distribution': degree_distribution, 'avg_vertex_degree': avg_vertex_degree}
+
+
+def get_component_distribution_metric(curr_gates_map, expected_gates_map):
+    comp_dist_metric_map = {}
+    for expected_logic_gate, expected_gate_set in expected_gates_map.items():
+        curr_gate_set = curr_gates_map.get(expected_logic_gate)
+        comp_dist_metric_map[expected_logic_gate] = len(expected_gate_set) / len(
+            curr_gate_set) if curr_gate_set is not None else 0
+
+    for curr_gate, curr_gate_set in curr_gates_map.items():  # gate exist in current iteration but not in expected
+        if not comp_dist_metric_map.__contains__(curr_gate):
+            comp_dist_metric_map[curr_gate] = 0
 
 
 if __name__ == '__main__':
@@ -516,7 +559,7 @@ if __name__ == '__main__':
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
-                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=5,
+                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=10,
                                     use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
 

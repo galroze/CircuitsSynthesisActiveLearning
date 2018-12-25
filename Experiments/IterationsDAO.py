@@ -19,16 +19,16 @@ class IterationsDAO(object):
         return res
 
     @staticmethod
-    def insert_iteration(experiment_fk, iteration_number, component_distribution_and, component_distribution_or,
-                         component_distribution_not, component_distribution_xor, oa_is_optimal, num_of_instances):
+    def insert_iteration(experiment_fk, iteration_number, num_of_instances, edges, vertices, component_distribution_and, component_distribution_or,
+                         component_distribution_not, component_distribution_xor, degree_distribution, avg_vertex_degree, oa_is_optimal):
         db = MysqlConnector.get_connection()
         cur = db.cursor()
 
-        query = "INSERT INTO ITERATIONS(experiment_fk, iteration_number, component_distribution_and, component_distribution_or, " \
-                "component_distribution_not, component_distribution_xor, oa_is_optimal, num_of_instances) " \
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-        cur.execute(query % (experiment_fk, iteration_number, component_distribution_and, component_distribution_or,
-                             component_distribution_not, component_distribution_xor, oa_is_optimal, num_of_instances))
+        query = "INSERT INTO ITERATIONS(experiment_fk, iteration_number, num_of_instances, edges, vertices, component_distribution_and, component_distribution_or, " \
+                "component_distribution_not, component_distribution_xor, degree_distribution, avg_vertex_degree, oa_is_optimal) " \
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '%s', %s, %s)"
+        cur.execute(query % (experiment_fk, iteration_number, num_of_instances, edges, vertices, component_distribution_and, component_distribution_or,
+                         component_distribution_not, component_distribution_xor, degree_distribution, avg_vertex_degree, oa_is_optimal))
         last_insert_id = cur._last_insert_id
         db.commit()
         cur.close()
