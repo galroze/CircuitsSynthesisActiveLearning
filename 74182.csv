@@ -1,0 +1,2 @@
+edges,vertices,component_distribution_and,component_distribution_or,component_distribution_not,component_distribution_xor,degree_distribution,avg_vertex_degree
+62,48,0.5294117647058824,0.35294117647058826,0.11764705882352941,-1,"1:6,2:5,3:33,4:4",2.7291666666666665
