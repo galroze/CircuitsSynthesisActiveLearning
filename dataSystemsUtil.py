@@ -1,3 +1,4 @@
+import csv
 import pandas
 import math
 from LogicTypes import *
@@ -72,9 +73,13 @@ def handle_row(expected_gates_map, auxilary_gates_map, gate_name, row_inputs, ro
                 del auxilary_gates_map[row_inputs[row_input_index]]
             row_inputs[row_input_index] = feature_gate
 
-        gate_feature = GateFeature(logic_types.get(gate_name), row_inputs)
+        gate_feature = GateFeature(logic_types.get(gate_name), [])
+        gate_feature.inputs = row_inputs #constructor deep copies inputs and I want to avoid it
+
         if is_inner_output(row_output):
             auxilary_gates_map[row_output] = gate_feature
+        else:
+            gate_feature.outputs.add(row_output)
         expected_gates_map[gate_name].add(gate_feature)
 
 
@@ -83,6 +88,8 @@ def generate_expected_gates_map(circuit_name):
     lines = [line.rstrip('\n') for line in open(fileName)]
 
     inputs_list = get_inputs_list(lines)
+    outputs_list = get_outputs_list(lines)
+
     auxilary_gates_map = {}
     for curr_input in inputs_list:
         auxilary_gates_map[curr_input] = GateFeature(None, [curr_input])
@@ -92,7 +99,15 @@ def generate_expected_gates_map(circuit_name):
         gate, row_inputs, row_output = parse_data_system_row(lines, row_index, logic_types)
         handle_row(expected_gates_map, auxilary_gates_map, gate.name, row_inputs, row_output)
 
-    return expected_gates_map
+    expected_gates_map['basic_inputs'] = [(basic_gate) for gate_name, basic_gate in auxilary_gates_map.items() if gate_name.startswith('i')]
+
+    for gate_type_set in expected_gates_map.values():
+        for gate in gate_type_set:
+            if gate.gate is not None:
+                for input in gate.inputs:
+                    input.outputs.add(gate)
+
+    return expected_gates_map, outputs_list
 
 
 def parse_data_system_row(lines, row_index, logic_types):
@@ -116,15 +131,18 @@ def get_inputs_list(lines):
     return inputs
 
 
+def get_outputs_list(lines):
+    outputs = lines[2].split(sep=',')
+    outputs[0] = outputs[0].replace('[', '')
+    outputs[len(outputs) - 1] = outputs[len(outputs) - 1].replace('].', '')
+    return outputs
+
+
 def generate_truth_table(circuit_name):
     fileName = CIRCUIT_SYSTEM_PATH + circuit_name + ".sys"
     lines = [line.rstrip('\n') for line in open(fileName)]
 
     inputs = get_inputs_list(lines)
-
-    outputs = lines[2].split(sep=',')
-    outputs[0] = outputs[0].replace('[', '')
-    outputs[len(outputs) - 1] = outputs[len(outputs) - 1].replace('].', '')
 
     truth_table_columns = inputs.copy()
     truth_table = pandas.DataFrame(columns=truth_table_columns, dtype=bool)
@@ -147,6 +165,59 @@ def generate_truth_table(circuit_name):
     print("Done generating: " + str(TRUTH_TABLE_PATH + circuit_name + ".tab") + " \ninputs: " + str(get_input_names(truth_table)) + " outputs: " + str(get_output_names(truth_table)))
 
 
+def write_metrics_to_csv(circuit_name, metric_dict):
+    with open('system_description_metrics\\' + circuit_name + '.csv', 'w', newline='') as csvfile:
+        fieldNames = ['edges', 'vertices', 'component_distribution_and', 'component_distribution_or', 'component_distribution_not',
+                      'component_distribution_xor', 'degree_distribution', 'avg_vertex_degree']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldNames)
+
+        writer.writeheader()
+
+        writer.writerow({'edges': metric_dict['edges'], 'vertices': metric_dict['vertices'],
+                         'component_distribution_and': get_metric_to_persist(metric_dict['comp_distribution_map'], TwoAnd.name),
+                         'component_distribution_or': get_metric_to_persist(metric_dict['comp_distribution_map'], TwoOr.name),
+                        'component_distribution_not': get_metric_to_persist(metric_dict['comp_distribution_map'], OneNot.name),
+                        'component_distribution_xor': get_metric_to_persist(metric_dict['comp_distribution_map'], TwoXor.name),
+                        'degree_distribution': ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in  metric_dict['degree_distribution'].items()]),
+                        'avg_vertex_degree': metric_dict['avg_vertex_degree']})
+
+
+def create_system_description(curr_gates_map, number_of_outputs):
+
+    vertices = 0
+    edges = 0
+    degree_distribution = {}
+    comp_distribution_map = {}
+    avg_vertex_degree = 0
+    vertices += number_of_outputs
+    degree_distribution[1] = number_of_outputs # init nodes of degree 1 for all outputs
+    for gate_type, gate_type_set in curr_gates_map.items():
+        vertices += len(gate_type_set)
+        for gate in gate_type_set:
+            edges += len(gate.outputs)
+            curr_degree = len(gate.outputs) + (len(gate.inputs) if gate.gate is not None else 0)
+            if not degree_distribution.__contains__(curr_degree):
+                degree_distribution[curr_degree] = 0
+            degree_distribution[curr_degree] += 1
+        if gate_type != 'basic_inputs':
+            comp_distribution_map[gate_type] = len(gate_type_set)
+
+    for comp in comp_distribution_map.keys():
+        input_size = len(curr_gates_map['basic_inputs']) if curr_gates_map.__contains__('basic_inputs') else 0
+        comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - input_size - number_of_outputs)
+    for degree, degree_count in degree_distribution.items():
+        avg_vertex_degree += int(degree) * degree_count
+    avg_vertex_degree /= sum(degree_distribution.values())
+
+    return {'edges': edges, 'vertices': vertices, 'comp_distribution_map': comp_distribution_map,
+            'degree_distribution': degree_distribution, 'avg_vertex_degree': avg_vertex_degree}
+
+
 if __name__ == '__main__':
-    circuit_name = 'c17'
-    generate_truth_table(circuit_name)
+    circuit_name = '74283'
+    # generate_truth_table(circuit_name)
+
+    # expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
+    # write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
+
+

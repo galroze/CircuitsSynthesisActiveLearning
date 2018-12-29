@@ -1,16 +1,15 @@
 from os import listdir
 from os.path import isfile, join
 import itertools
-import git
 import time
-import csv
 import re
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import _tree
 from LogicUtils import *
 from LogicTypes import *
-from dataSystemsUtil import generate_expected_gates_map
 from Experiments.ExperimentServiceImpl import write_experiment
+from dataSystemsUtil import create_system_description
+
 
 class ActiveLearningCircuitSynthesisConfiguration:
 
@@ -291,7 +290,7 @@ def init_orthogonal_arrays(use_orthogonal_arrays):
 
 
 def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, induced, gate_features_inputs,
-                    values_to_explore_by_tree, number_of_outputs, should_randomize_remaining_data):
+                    values_to_explore_by_tree, number_of_outputs):
     if len(orig_data) > 0:
         # apply over the previous data the last new added feature
         curr_data, _ = apply_new_attributes(induced, curr_data, non_not_max_input_index, gate_features_inputs,
@@ -306,7 +305,7 @@ def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, in
         if ALCS_conf.use_explore_nodes & len(values_to_explore_by_tree) > 0:
             tmp_data = get_data_frame_by_values_to_explore(values_to_explore_by_tree, gate_features_inputs, orig_data)
         # take new sample out of the rest of the data
-        if should_randomize_remaining_data:  # Random batch
+        if ALCS_conf.randomize_remaining_data:  # Random batch
             batch_size = ALCS_conf.random_batch_size if len(tmp_data) > ALCS_conf.random_batch_size else len(tmp_data)
             if batch_size > 0:
                 new_sample = tmp_data.sample(n=batch_size, random_state=2018)
@@ -353,12 +352,11 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
                                                     len(gate_features_inputs))
 
             orig_data, data, non_not_max_input_index = get_random_data(ALCS_conf, orig_data, curr_data,
-                            non_not_max_input_index, induced, gate_features_inputs, values_to_explore_by_tree,
-                            number_of_outputs, ALCS_conf.randomize_remaining_data)
+                            non_not_max_input_index, induced, gate_features_inputs, values_to_explore_by_tree, number_of_outputs)
 
     else:  # Random Batch
         orig_data, data, non_not_max_input_index = get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index,
-                                                       induced, gate_features_inputs, values_to_explore_by_tree, number_of_outputs, False)
+                                                       induced, gate_features_inputs, values_to_explore_by_tree, number_of_outputs)
 
     # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
     if induced != 0:
@@ -370,7 +368,7 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
     return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal
 
 
-def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_map):
+def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
 
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
@@ -463,12 +461,13 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_m
         else:
             raise Exception('Current iteration did not add any new attribute')
 
+        if best_quality <= 3 * number_of_outputs:
+            curr_gates_map = generate_gates_map(best_trees_dump, gate_features_inputs)
+            sys_description = create_system_description(curr_gates_map, number_of_outputs)
 
-        sys_description = create_system_description(best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
-
-        metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
-                                        'sys_description': sys_description,
-                                         'oa_is_optimal': oa_is_optimal}
+            metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
+                                            'sys_description': sys_description,
+                                            'oa_is_optimal': oa_is_optimal}
         # get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
 
     return metrics_by_iteration
@@ -510,38 +509,6 @@ def add_gates(gates_map, gate, output):
                 add_gates(gates_map, curr_input, gate)
 
 
-def create_system_description(best_trees_dump, best_quality, number_of_outputs, gate_features):
-
-    vertices = 0
-    edges = 0
-    degree_distribution = {}
-    comp_distribution_map = {}
-    avg_vertex_degree = 0
-    if best_quality <= 3 * number_of_outputs:
-        curr_gates_map = generate_gates_map(best_trees_dump, gate_features)
-        vertices += number_of_outputs
-        degree_distribution[1] = number_of_outputs # init nodes of degree 1 for all outputs
-        for gate_type, gate_type_set in curr_gates_map.items():
-            vertices += len(gate_type_set)
-            for gate in gate_type_set:
-                edges += len(gate.outputs)
-                curr_degree = len(gate.outputs) + (len(gate.inputs) if gate.gate is not None else 0)
-                if not degree_distribution.__contains__(curr_degree):
-                    degree_distribution[curr_degree] = 0
-                degree_distribution[curr_degree] += 1
-            if gate_type != 'basic_inputs':
-                comp_distribution_map[gate_type] = len(gate_type_set)
-
-        for comp in comp_distribution_map.keys():
-            comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - len(curr_gates_map['basic_inputs']) - number_of_outputs)
-        for degree, degree_count in degree_distribution.items():
-            avg_vertex_degree += int(degree) * degree_count
-        avg_vertex_degree /= sum(degree_distribution.values())
-
-
-    return {'edges': edges, 'vertices': vertices, 'comp_distribution_map': comp_distribution_map, 'degree_distribution': degree_distribution, 'avg_vertex_degree': avg_vertex_degree}
-
-
 def get_component_distribution_metric(curr_gates_map, expected_gates_map):
     comp_dist_metric_map = {}
     for expected_logic_gate, expected_gate_set in expected_gates_map.items():
@@ -555,31 +522,25 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 
 if __name__ == '__main__':
-    circuit_name = "c17"
+    circuit_name = "74283"
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
-                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=10,
-                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
+                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
+                                    use_orthogonal_arrays=False, use_explore_nodes=False, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
 
     print("Working on: " + ALCS_configuration.file_name)
 
     oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
-    expected_gates_map = generate_expected_gates_map(circuit_name)
 
     start_time = int(round(time.time() * 1000))
-    metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, expected_gates_map)
+    metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
     end_time = int(round(time.time() * 1000))
 
     run_time = (end_time - start_time)/1000
     print("took: %.5f sec" % run_time)
 
-    # git version info
-    repo = git.Repo(search_parent_directories=True)
-    current_version = repo.head.object.hexsha
-    version_time = repo.head.object.committed_datetime
-
-    write_experiment(current_version, run_time, ALCS_configuration, metrics_by_iteration)
+    write_experiment(get_current_git_version(), run_time, ALCS_configuration, metrics_by_iteration)

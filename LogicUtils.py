@@ -1,6 +1,7 @@
 import pandas
 import numpy as np
 import sys
+import git
 
 
 class OA:
@@ -69,3 +70,16 @@ def get_nearest_oa(oa_list, value):
 def get_strength(file_name):
     split_name = file_name.split('_')
     return split_name[len(split_name) - 1].split('.txt')[0]
+
+
+def get_current_git_version():
+    # git version info
+    repo = git.Repo(search_parent_directories=True)
+    current_version = repo.head.object.hexsha
+    version_time = repo.head.object.committed_datetime
+
+    return current_version
+
+
+def get_metric_to_persist(metric, entry):
+    return metric[entry] if metric.get(entry) is not None else -1
