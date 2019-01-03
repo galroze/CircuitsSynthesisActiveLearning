@@ -204,7 +204,7 @@ def create_system_description(curr_gates_map, number_of_outputs):
 
     for comp in comp_distribution_map.keys():
         input_size = len(curr_gates_map['basic_inputs']) if curr_gates_map.__contains__('basic_inputs') else 0
-        comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - input_size - number_of_outputs)
+        # comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - input_size - number_of_outputs)
     for degree, degree_count in degree_distribution.items():
         avg_vertex_degree += int(degree) * degree_count
     avg_vertex_degree /= sum(degree_distribution.values())
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     circuit_name = '74283'
     # generate_truth_table(circuit_name)
 
-    # expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
+    expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
     # write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
 
 
