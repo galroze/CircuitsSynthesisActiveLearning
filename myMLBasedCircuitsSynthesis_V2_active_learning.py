@@ -461,11 +461,13 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
         else:
             raise Exception('Current iteration did not add any new attribute')
 
+        sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
+            'degree_distribution': {}, 'avg_vertex_degree': 0}
         if best_quality <= 3 * number_of_outputs:
             curr_gates_map = generate_gates_map(best_trees_dump, gate_features_inputs)
             sys_description = create_system_description(curr_gates_map, number_of_outputs)
 
-            metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
+        metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
                                             'sys_description': sys_description,
                                             'oa_is_optimal': oa_is_optimal}
         # get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
@@ -522,14 +524,14 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 
 if __name__ == '__main__':
-    circuit_name = "74283"
+    circuit_name = "74182"
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
-                                    use_orthogonal_arrays=False, use_explore_nodes=False, randomize_remaining_data=True,
+                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
 
     print("Working on: " + ALCS_configuration.file_name)
