@@ -202,8 +202,8 @@ def create_system_description(curr_gates_map, number_of_outputs):
         if gate_type != 'basic_inputs':
             comp_distribution_map[gate_type] = len(gate_type_set)
 
-    for comp in comp_distribution_map.keys():
-        input_size = len(curr_gates_map['basic_inputs']) if curr_gates_map.__contains__('basic_inputs') else 0
+    # for comp in comp_distribution_map.keys():
+    #     input_size = len(curr_gates_map['basic_inputs']) if curr_gates_map.__contains__('basic_inputs') else 0
         # comp_distribution_map[comp] = comp_distribution_map[comp] / (vertices - input_size - number_of_outputs)
     for degree, degree_count in degree_distribution.items():
         avg_vertex_degree += int(degree) * degree_count
