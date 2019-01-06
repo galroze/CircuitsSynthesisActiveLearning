@@ -3,6 +3,7 @@ import pandas
 import math
 from LogicTypes import *
 from LogicUtils import *
+import collections
 
 logic_types = {OneNot.name: OneNot, TwoXor.name: TwoXor, TwoAnd.name: TwoAnd, ThreeAnd.name: ThreeAnd,
                FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, TwoOr.name: TwoOr, ThreeOr.name: ThreeOr,
@@ -201,6 +202,7 @@ def create_system_description(curr_gates_map, number_of_outputs):
             degree_distribution[curr_degree] += 1
         if gate_type != 'basic_inputs':
             comp_distribution_map[gate_type] = len(gate_type_set)
+    degree_distribution = collections.OrderedDict(sorted(degree_distribution.items()))
 
     # for comp in comp_distribution_map.keys():
     #     input_size = len(curr_gates_map['basic_inputs']) if curr_gates_map.__contains__('basic_inputs') else 0
@@ -214,10 +216,10 @@ def create_system_description(curr_gates_map, number_of_outputs):
 
 
 if __name__ == '__main__':
-    circuit_name = '74283'
+    circuit_name = '74182'
     # generate_truth_table(circuit_name)
 
     expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
-    # write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
+    write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
 
 
