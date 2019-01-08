@@ -14,7 +14,8 @@ from dataSystemsUtil import create_system_description
 class ActiveLearningCircuitSynthesisConfiguration:
 
     def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
-                 use_orthogonal_arrays, use_explore_nodes, randomize_remaining_data, random_batch_size, min_oa_strength):
+                 use_orthogonal_arrays, use_explore_nodes, randomize_remaining_data, random_batch_size,
+                 pre_defined_random_size_per_iteration, min_oa_strength):
 
         self.file_name = file_name
         self.total_num_of_instances = total_num_of_instances
@@ -27,6 +28,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
         # when using OA and there are no more arrays to use, True for random, False for taking all remaining data
         self.randomize_remaining_data = randomize_remaining_data
         self.random_batch_size = random_batch_size
+        self.pre_defined_random_size_per_iteration = pre_defined_random_size_per_iteration
         self.min_oa_strength = min_oa_strength
 
 
@@ -306,7 +308,13 @@ def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, in
             tmp_data = get_data_frame_by_values_to_explore(values_to_explore_by_tree, gate_features_inputs, orig_data)
         # take new sample out of the rest of the data
         if ALCS_conf.randomize_remaining_data:  # Random batch
-            batch_size = ALCS_conf.random_batch_size if len(tmp_data) > ALCS_conf.random_batch_size else len(tmp_data)
+            if len(ALCS_conf.pre_defined_random_size_per_iteration) > 0:
+                if induced == 0:
+                    batch_size = ALCS_conf.pre_defined_random_size_per_iteration[induced]
+                else:
+                    batch_size = ALCS_conf.pre_defined_random_size_per_iteration[induced] - ALCS_conf.pre_defined_random_size_per_iteration[induced - 1]
+            else:
+                batch_size = ALCS_conf.random_batch_size if len(tmp_data) > ALCS_conf.random_batch_size else len(tmp_data)
             if batch_size > 0:
                 new_sample = tmp_data.sample(n=batch_size, random_state=2018)
                 orig_data = orig_data.drop(new_sample.index)
@@ -326,7 +334,7 @@ def get_random_data(ALCS_conf, orig_data, curr_data, non_not_max_input_index, in
 
 def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_index, max_input_index, curr_oa, induced,
                            oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs):
-    oa_is_optimal = True
+    oa_is_optimal = -1
     if ALCS_conf.use_orthogonal_arrays:
         next_strength = str(induced + ALCS_conf.min_oa_strength)
         if oa_by_strength_map.__contains__(next_strength):
@@ -525,6 +533,8 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 if __name__ == '__main__':
     circuit_name = "74182"
+    pre_def_list = [8, 12, 18, 25, 25, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]
+
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
 
@@ -532,7 +542,9 @@ if __name__ == '__main__':
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
                                     use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
-                                    random_batch_size=int(round(len(orig_data)*0.25)), min_oa_strength=2)
+                                    random_batch_size=int(round(len(orig_data)*0.25)),
+                                    pre_defined_random_size_per_iteration=[],
+                                    min_oa_strength=2)
 
     print("Working on: " + ALCS_configuration.file_name)
 

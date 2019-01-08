@@ -16,7 +16,7 @@ def read_oa(path):
         oa_array = oa_file.read().split('\n').copy()
     oa_num_of_att = len(oa_array[0])
     splitted_path = path.split('\\')
-    new_oa = OA(oa_array, oa_num_of_att, False if splitted_path[len(splitted_path) - 1].startswith('GEN') else True)
+    new_oa = OA(oa_array, oa_num_of_att, 0 if splitted_path[len(splitted_path) - 1].startswith('GEN') else 1)
     return new_oa
 
 

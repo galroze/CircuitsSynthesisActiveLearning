@@ -216,7 +216,7 @@ def create_system_description(curr_gates_map, number_of_outputs):
 
 
 if __name__ == '__main__':
-    circuit_name = '74182'
+    circuit_name = 'c17'
     # generate_truth_table(circuit_name)
 
     expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
