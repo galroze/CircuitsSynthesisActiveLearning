@@ -39,6 +39,7 @@ def write_experiment(git_version, run_time, ALCS_configuration, metrics_by_itera
                                        get_metric_to_persist(sys_desc['comp_distribution_map'], TwoXor.name),
                                        ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in sys_desc['degree_distribution'].items()]),
                                        sys_desc['avg_vertex_degree'],
+                                       metric['test_set_error'],
                                        metric["oa_is_optimal"])
 
 

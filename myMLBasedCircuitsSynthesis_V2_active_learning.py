@@ -51,11 +51,14 @@ def print_tree_to_code(tree, curr_gate_features):
         if tree_.feature[node] != _tree.TREE_UNDEFINED:
             name = tree_feature_names[node]
             threshold = tree_.threshold[node]
+            console_file.write("{}if {} <= {}:".format(indent, name, threshold))
             print ("{}if {} <= {}:".format(indent, name, threshold))
             recurse(tree_.children_left[node], depth + 1)
+            console_file.write("{}else:  # if {} > {}".format(indent, name, threshold))
             print ("{}else:  # if {} > {}".format(indent, name, threshold))
             recurse(tree_.children_right[node], depth + 1)
         else:
+            console_file.write("{}return {}".format(indent, tree_.value[node]))
             print ("{}return {}".format(indent, tree_.value[node]))
 
     recurse(0, 1)
@@ -202,7 +205,7 @@ def get_batch_using_oa(data, max_input_index, oa):
     for row_index in range(len(data)):
         for oa_row_index in range(len(oa)):
             if matched_oa(data.loc[row_index][:max_input_index], oa[oa_row_index]):
-                data_batch = data_batch.append(pandas.DataFrame([data.loc[row_index]]), ignore_index=True)
+                data_batch = data_batch.append(pandas.DataFrame([data.loc[row_index]]), ignore_index=False)
                 break
     return data_batch
 
@@ -376,6 +379,18 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
     return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal
 
 
+def get_model_error(best_trees_dump, data, outputs):
+    error = 0
+    for output, tree in best_trees_dump.items():
+        pred_y = tree.predict(data.ix[:, [i for i in data.columns if i not in outputs]])
+        row_index = 0
+        for index, instance in data.iterrows():
+            if instance[output] != pred_y[row_index]:
+                error += 1
+            row_index += 1
+    return error/len(data)
+
+
 def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
 
     outputs = get_output_names(orig_data)
@@ -383,7 +398,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
 
     orig_max_input_index = len(orig_data.columns.values) - number_of_outputs
     inputs = orig_data.columns[:orig_max_input_index]
-
+    console_file.write(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
     print(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
 
     print("Initial data:")
@@ -453,31 +468,53 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
                             best_attribute_name = new_attribute_name
                             best_attribute_gates_map = get_gates_map(best_attribute_name)
                             best_trees_dump = fitted_trees
+                            # data_dump = data.copy()
                         del data[new_attribute_name]
         # Now check if there is something new to add
         if best_quality < 1000:
             induced += 1
             gate_features_inputs.insert(non_not_max_input_index, best_gate_feature)
+            console_file.write("============ Selected Gate is: %s" % (best_attribute_name))
             print ("============ Selected Gate is: %s" % (best_attribute_name))
             values_to_explore_dict = {} # node values ordered from root to leaf
             for output, tree in best_trees_dump.items():
+                console_file.write("\ntree for " + str(output))
                 print("\ntree for " + str(output))
                 print_tree_to_code(tree, gate_features_inputs)
                 if ALCS_configuration.use_explore_nodes:
                     values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, gate_features_inputs)
+            console_file.write("=============")
             print ("=============")
         else:
             raise Exception('Current iteration did not add any new attribute')
 
         sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
-            'degree_distribution': {}, 'avg_vertex_degree': 0}
+                           'degree_distribution': {}, 'avg_vertex_degree': 0}
+        test_set_error = -1
         if best_quality <= 3 * number_of_outputs:
             curr_gates_map = generate_gates_map(best_trees_dump, gate_features_inputs)
             sys_description = create_system_description(curr_gates_map, number_of_outputs)
 
+            # train_set_error = get_model_error(best_trees_dump, data_dump)
+            # print('train_set_error: ', train_set_error)
+            if len(orig_data) > 0:
+                delete_data_index_list = [ind for ind in data.index if ind in orig_data.index]
+                test_set = orig_data.copy().drop(delete_data_index_list)
+                if len(test_set) > 0:
+                    test_set, _ = apply_new_attributes(induced - 1, test_set,
+                                                       len(test_set.columns.values) - number_of_outputs,
+                                                       gate_features_inputs, len(gate_features_inputs) - 1,
+                                                       len(gate_features_inputs))
+                    test_set, _ = apply_new_attributes(induced, test_set, non_not_max_input_index,
+                                                       gate_features_inputs,
+                                                       non_not_max_input_index,
+                                                       non_not_max_input_index + 1)
+                    test_set_error = get_model_error(best_trees_dump, test_set, outputs)
+                    print('test_set_error: ' + str(test_set_error) + " test size: " + str(len(test_set)))
         metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
-                                            'sys_description': sys_description,
-                                            'oa_is_optimal': oa_is_optimal}
+                                         'sys_description': sys_description,
+                                         'test_set_error': test_set_error,
+                                         'oa_is_optimal': oa_is_optimal}
         # get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
 
     return metrics_by_iteration
@@ -533,8 +570,9 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 if __name__ == '__main__':
     circuit_name = "74182"
-    pre_def_list = [8, 12, 18, 25, 25, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]
-
+    # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
+    # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 372, 425, 450, 450, 450, 462, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487]
+    pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [OneNot, TwoXor, TwoAnd, TwoOr]
 
@@ -550,11 +588,13 @@ if __name__ == '__main__':
 
     oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
 
-    start_time = int(round(time.time() * 1000))
-    metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
-    end_time = int(round(time.time() * 1000))
+    with open(circuit_name + '.txt', 'a') as console_file:
 
-    run_time = (end_time - start_time)/1000
-    print("took: %.5f sec" % run_time)
+        start_time = int(round(time.time() * 1000))
+        metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
+        end_time = int(round(time.time() * 1000))
 
-    write_experiment(get_current_git_version(), run_time, ALCS_configuration, metrics_by_iteration)
+        run_time = (end_time - start_time)/1000
+        print("took: %.5f sec" % run_time)
+
+        write_experiment(get_current_git_version(), run_time, ALCS_configuration, metrics_by_iteration)
