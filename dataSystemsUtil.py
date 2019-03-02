@@ -6,9 +6,11 @@ from LogicUtils import *
 import collections
 
 logic_types = {OneNot.name: OneNot, TwoXor.name: TwoXor, TwoAnd.name: TwoAnd, ThreeAnd.name: ThreeAnd,
-               FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, TwoOr.name: TwoOr, ThreeOr.name: ThreeOr,
+               FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, EightAnd.name: EightAnd, NineAnd.name: NineAnd,
+               TwoOr.name: TwoOr, ThreeOr.name: ThreeOr,
                FourOr.name: FourOr, TwoNor.name: TwoNor, ThreeNor.name: ThreeNor, FourNor.name: FourNor,
-               FiveNor.name: FiveNor, NotAnd.name: NotAnd, Buffer.name: Buffer}
+               FiveNor.name: FiveNor, NotAnd.name: NotAnd, ThreeNand.name: ThreeNand, FourNand.name: FourNand,
+               FiveNand.name: FiveNand, Buffer.name: Buffer}
 basic_gates = {OneNot.name, TwoXor.name, TwoAnd.name, TwoOr.name}
 
 
@@ -17,9 +19,27 @@ def is_inner_output(output_str):
 
 
 def handle_row_with_transform_to_basic(expected_gates_map, auxilary_gates_map, gate_name, row_inputs, row_output):
+    if gate_name == Buffer.name:
+       handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, row_inputs, "temp")
+       handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, ["temp"], row_output)
     if gate_name == NotAnd.name:
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs, "temp")
         handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, ["temp"], row_output)
+    if gate_name == ThreeNand.name:
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[1:], "temp")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, [row_inputs[0], "temp"], "temp2")
+        handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, ["temp2"], row_output)
+    if gate_name == FourNand.name:
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[2:], "temp1")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[:2], "temp2")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp1", "temp2"], "temp3")
+        handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, ["temp3"], row_output)
+    if gate_name == FiveNand.name:
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[:2], "temp1")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[2:4], "temp2")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp1", "temp2"], "temp3")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, [row_inputs[4], "temp3"], "temp4")
+        handle_row(expected_gates_map, auxilary_gates_map, OneNot.name, ["temp4"], row_output)
     elif gate_name == ThreeAnd.name:
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[1:], "temp")
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, [row_inputs[0], "temp"], row_output)
@@ -32,6 +52,23 @@ def handle_row_with_transform_to_basic(expected_gates_map, auxilary_gates_map, g
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[:2], "temp2")
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp1", "temp2"], "temp3")
         handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, [row_inputs[2], "temp3"], row_output)
+    elif gate_name == EightAnd.name:
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[:2], "temp1")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[2:4], "temp2")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[4:6], "temp3")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[6:], "temp4")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp1", "temp2"], "temp5")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp3", "temp4"], "temp6")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp5", "temp6"], row_output)
+    elif gate_name == NineAnd.name:
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[:2], "temp1")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[2:4], "temp2")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[4:6], "temp3")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, row_inputs[6:8], "temp4")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp1", "temp2"], "temp5")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp3", "temp4"], "temp6")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, ["temp5", "temp6"], "temp7")
+        handle_row(expected_gates_map, auxilary_gates_map, TwoAnd.name, [row_inputs[8], "temp7"], row_output)
     elif gate_name == ThreeOr.name:
         handle_row(expected_gates_map, auxilary_gates_map, TwoOr.name, row_inputs[1:], "temp")
         handle_row(expected_gates_map, auxilary_gates_map, TwoOr.name, [row_inputs[0], "temp"], row_output)
@@ -216,7 +253,7 @@ def create_system_description(curr_gates_map, number_of_outputs):
 
 
 if __name__ == '__main__':
-    circuit_name = 'c17'
+    circuit_name = '74181'
     # generate_truth_table(circuit_name)
 
     expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)

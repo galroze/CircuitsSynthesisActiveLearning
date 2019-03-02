@@ -110,6 +110,30 @@ class FiveAnd:
         return operator.and_(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)), value5)
 
 
+class EightAnd:
+    name = "and8"
+    numInputs = 8
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5, value6, value7, value8):
+        return operator.and_(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)),
+                                           operator.and_(value5, value6), operator.and_(value7, value8))
+
+
+class NineAnd:
+    name = "and9"
+    numInputs = 9
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5, value6, value7, value8, value9):
+        return operator.and_(operator.and_(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)),
+                                           operator.and_(value5, value6), operator.and_(value7, value8)), value9)
+
+
 class NotAnd:
     name = "nand2"
     numInputs = 2
@@ -119,6 +143,39 @@ class NotAnd:
     @staticmethod
     def f(value1, value2):
         return OneNot.f(operator.and_(value1, value2))
+
+
+class ThreeNand:
+    name = "nand3"
+    numInputs = 4
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3):
+        return OneNot.f(operator.and_(operator.and_(value1, value2), value3))
+
+
+class FourNand:
+    name = "nand4"
+    numInputs = 4
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4):
+        return OneNot.f(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)))
+
+
+class FiveNand:
+    name = "nand5"
+    numInputs = 5
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5):
+        return OneNot.f(operator.and_(operator.and_(operator.and_(value1, value2), operator.and_(value3, value4)), value5))
 
 
 class TwoOr:
