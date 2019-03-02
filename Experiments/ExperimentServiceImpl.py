@@ -5,7 +5,7 @@ from LogicTypes import *
 from LogicUtils import *
 
 
-def write_experiment(git_version, run_time, ALCS_configuration, metrics_by_iteration):
+def write_experiment(git_version, ALCS_configuration, metrics_by_iteration):
 
     possible_gates = ",".join([gate.name for gate in ALCS_configuration.possible_gates])
     conf = ConfigurationsDAO.get_configurations(escape_str(ALCS_configuration.file_name), ALCS_configuration.total_num_of_instances,
@@ -26,7 +26,12 @@ def write_experiment(git_version, run_time, ALCS_configuration, metrics_by_itera
                         convert_boolean(ALCS_configuration.randomize_remaining_data), ALCS_configuration.random_batch_size,
                         ALCS_configuration.min_oa_strength)
 
-    experiment_fk = ExperimentsDAO.insert_experiment(git_version, configuration_fk, run_time)
+    experiment_fk = ExperimentsDAO.insert_experiment(git_version, configuration_fk, -1)
+    write_iterations(experiment_fk, metrics_by_iteration)
+    return experiment_fk
+
+
+def write_iterations(experiment_fk, metrics_by_iteration):
 
     for induced, metric in metrics_by_iteration.items():
         sys_desc = metric['sys_description']
@@ -40,7 +45,8 @@ def write_experiment(git_version, run_time, ALCS_configuration, metrics_by_itera
                                        ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in sys_desc['degree_distribution'].items()]),
                                        sys_desc['avg_vertex_degree'],
                                        metric['test_set_error'],
-                                       metric["oa_is_optimal"])
+                                       metric["oa_is_optimal"],
+                                       metric['iteration_time'])
 
 
 def convert_boolean(value):
