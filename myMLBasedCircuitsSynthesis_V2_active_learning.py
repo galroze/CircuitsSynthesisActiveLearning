@@ -3,11 +3,15 @@ from os.path import isfile, join
 import itertools
 import time
 import re
+import datetime
+
+from more_itertools import first
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import _tree
 from LogicUtils import *
 from LogicTypes import *
 from Experiments.ExperimentServiceImpl import write_experiment
+from Experiments.ExperimentServiceImpl import write_iterations
 from dataSystemsUtil import create_system_description
 
 
@@ -32,6 +36,8 @@ class ActiveLearningCircuitSynthesisConfiguration:
         self.min_oa_strength = min_oa_strength
 
 
+    def __str__(self):
+        return '\n'.join('%s=%s' % item for item in vars(self).items())
 
 
 def insert_gate_as_att(data, gate_feature, max_input_index):
@@ -51,14 +57,14 @@ def print_tree_to_code(tree, curr_gate_features):
         if tree_.feature[node] != _tree.TREE_UNDEFINED:
             name = tree_feature_names[node]
             threshold = tree_.threshold[node]
-            console_file.write("{}if {} <= {}:".format(indent, name, threshold))
+            # console_file.write("{}if {} <= {}:".format(indent, name, threshold))
             print ("{}if {} <= {}:".format(indent, name, threshold))
             recurse(tree_.children_left[node], depth + 1)
-            console_file.write("{}else:  # if {} > {}".format(indent, name, threshold))
+            # console_file.write("{}else:  # if {} > {}".format(indent, name, threshold))
             print ("{}else:  # if {} > {}".format(indent, name, threshold))
             recurse(tree_.children_right[node], depth + 1)
         else:
-            console_file.write("{}return {}".format(indent, tree_.value[node]))
+            # console_file.write("{}return {}".format(indent, tree_.value[node]))
             print ("{}return {}".format(indent, tree_.value[node]))
 
     recurse(0, 1)
@@ -391,14 +397,61 @@ def get_model_error(best_trees_dump, data, outputs):
     return error/len(data)
 
 
-def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
+def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration, write_iterations_batch_size, git_version):
 
+    def first_batch(induced, write_iterations_batch_size):
+        return induced == write_iterations_batch_size
+
+    if (write_iterations_batch_size == 1) or ((induced > 1) & ((induced  % write_iterations_batch_size) == 0)):
+        if enable_write_experiments_to_DB:
+            # first batch
+            if first_batch(induced, write_iterations_batch_size):
+                experiment_fk = write_experiment(git_version, ALCS_configuration, metrics_by_iteration)
+            else:
+                write_iterations(experiment_fk, metrics_by_iteration)
+        else:# write to file
+            # first batch
+            lines_to_write = []
+            if first_batch(induced, write_iterations_batch_size):
+                lines_to_write.append("* created: " + str(datetime.datetime.now()))
+                lines_to_write.append("\n* git version: " + git_version)
+                lines_to_write.append("\n\n* configuration:\n")
+                lines_to_write.append(ALCS_configuration.__str__())
+                lines_to_write.append("\n\n* Iterations:\n")
+                lines_to_write.append("\niteration_number\tnum_of_instances\tedges\tvertices\tcomponent_distribution_and\tcomponent_distribution_or\tcomponent_distribution_not\tcomponent_distribution_xor\tdegree_distribution\tavg_vertex_degree\ttest_set_error\toa_is_optimal\titeration_time\n")
+
+            for iteration, metrics in metrics_by_iteration.items():
+                lines_to_write.append(str(iteration))
+                lines_to_write.append("\t" + str(metrics["num_of_instances"]))
+                lines_to_write.append("\t" + str(metrics["sys_description"]["edges"]))
+                lines_to_write.append("\t" + str(metrics["sys_description"]["vertices"]))
+                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoAnd.name)))
+                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoOr.name)))
+                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], OneNot.name)))
+                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoXor.name)))
+                degree_distribution = ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in
+                          metrics["sys_description"]['degree_distribution'].items()])
+                lines_to_write.append("\t" + ("-1" if len(degree_distribution) == 0 else degree_distribution))
+                lines_to_write.append("\t" + str(metrics["sys_description"]["avg_vertex_degree"]))
+                lines_to_write.append("\t" + str(metrics["test_set_error"]))
+                lines_to_write.append("\t" + str(metrics["oa_is_optimal"]))
+                lines_to_write.append("\t" + str(metrics["iteration_time"]))
+                lines_to_write.append("\n")
+
+            with open(circuit_name + '_experiments_log.txt', 'a') as experiments_log_file:
+                experiments_log_file.writelines(lines_to_write)
+        metrics_by_iteration = {}
+
+    return experiment_fk, metrics_by_iteration
+
+
+def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size, enable_write_experiments_to_DB, git_version):
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
 
     orig_max_input_index = len(orig_data.columns.values) - number_of_outputs
     inputs = orig_data.columns[:orig_max_input_index]
-    console_file.write(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
+    # console_file.write(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
     print(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
 
     print("Initial data:")
@@ -410,6 +463,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
     curr_oa = None
     values_to_explore_by_tree = {}
     metrics_by_iteration = {}
+    experiment_fk = -1  # dummy experiment
 
     # FIRST ADD THE NOT GATE FOR ALL CURRENT INPUT
     not_gate_arguments = itertools.combinations(gate_features_inputs, 1)
@@ -423,6 +477,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
     data = pandas.DataFrame(columns=orig_data.columns.values, dtype=bool)
 
     while induced < ALCS_configuration.max_num_of_iterations:
+        start_time = int(round(time.time() * 1000))
         best_quality = 10000
         best_attribute_name = ""
         best_attribute_gates_map = {}
@@ -455,7 +510,6 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
                         tree_quality = 0
                         inputs = data.columns[:max_input_index + 1]
                         fitted_trees = {}
-                        # fit_start = time.time()
                         for output_index in range(len(outputs)):
                             tree_data = DecisionTreeClassifier(random_state=0, criterion="entropy")
                             tree_data.fit(data[inputs], data[outputs[output_index]])
@@ -468,57 +522,66 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map):
                             best_attribute_name = new_attribute_name
                             best_attribute_gates_map = get_gates_map(best_attribute_name)
                             best_trees_dump = fitted_trees
-                            # data_dump = data.copy()
                         del data[new_attribute_name]
-        # Now check if there is something new to add
-        if best_quality < 1000:
-            induced += 1
-            gate_features_inputs.insert(non_not_max_input_index, best_gate_feature)
-            console_file.write("============ Selected Gate is: %s" % (best_attribute_name))
-            print ("============ Selected Gate is: %s" % (best_attribute_name))
-            values_to_explore_dict = {} # node values ordered from root to leaf
-            for output, tree in best_trees_dump.items():
-                console_file.write("\ntree for " + str(output))
-                print("\ntree for " + str(output))
-                print_tree_to_code(tree, gate_features_inputs)
-                if ALCS_configuration.use_explore_nodes:
-                    values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, gate_features_inputs)
-            console_file.write("=============")
-            print ("=============")
-        else:
-            raise Exception('Current iteration did not add any new attribute')
 
-        sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
-                           'degree_distribution': {}, 'avg_vertex_degree': 0}
-        test_set_error = -1
-        if best_quality <= 3 * number_of_outputs:
-            curr_gates_map = generate_gates_map(best_trees_dump, gate_features_inputs)
-            sys_description = create_system_description(curr_gates_map, number_of_outputs)
+        induced += 1
+        gate_features_inputs.insert(non_not_max_input_index, best_gate_feature)
+        # console_file.write("============ Selected Gate is: %s" % (best_attribute_name))
+        print ("============ Selected Gate is: %s" % (best_attribute_name))
+        values_to_explore_dict = {} # node values ordered from root to leaf
+        for output, tree in best_trees_dump.items():
+            # console_file.write("\ntree for " + str(output))
+            print("\ntree for " + str(output))
+            print_tree_to_code(tree, gate_features_inputs)
+            if ALCS_configuration.use_explore_nodes:
+                values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, gate_features_inputs)
+        # console_file.write("=============")
+        print ("=============")
 
-            # train_set_error = get_model_error(best_trees_dump, data_dump)
-            # print('train_set_error: ', train_set_error)
-            if len(orig_data) > 0:
-                delete_data_index_list = [ind for ind in data.index if ind in orig_data.index]
-                test_set = orig_data.copy().drop(delete_data_index_list)
-                if len(test_set) > 0:
-                    test_set, _ = apply_new_attributes(induced - 1, test_set,
-                                                       len(test_set.columns.values) - number_of_outputs,
-                                                       gate_features_inputs, len(gate_features_inputs) - 1,
-                                                       len(gate_features_inputs))
-                    test_set, _ = apply_new_attributes(induced, test_set, non_not_max_input_index,
-                                                       gate_features_inputs,
-                                                       non_not_max_input_index,
-                                                       non_not_max_input_index + 1)
-                    test_set_error = get_model_error(best_trees_dump, test_set, outputs)
-                    print('test_set_error: ' + str(test_set_error) + " test size: " + str(len(test_set)))
-        metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
-                                         'sys_description': sys_description,
-                                         'test_set_error': test_set_error,
-                                         'oa_is_optimal': oa_is_optimal}
-        # get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
+        evaluate_metrics(metrics_by_iteration, data, induced, outputs, num_of_insances, oa_is_optimal, best_quality, best_trees_dump,
+                             gate_features_inputs, number_of_outputs, non_not_max_input_index)
+        end_time = int(round(time.time() * 1000))
+        metrics_by_iteration[induced]['iteration_time'] = (end_time - start_time) / 1000
+        experiment_fk, metrics_by_iteration = write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk,
+                                                          metrics_by_iteration, write_iterations_batch_size, git_version)
 
-    return metrics_by_iteration
+    return metrics_by_iteration, induced, experiment_fk
 
+
+def evaluate_metrics(metrics_by_iteration, data, induced, outputs, num_of_insances, oa_is_optimal, best_quality, best_trees_dump, gate_features_inputs, number_of_outputs, non_not_max_input_index):
+    sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
+                       'degree_distribution': {}, 'avg_vertex_degree': 0}
+    test_set_error = -1
+
+    if best_quality <= 3 * number_of_outputs:
+        curr_gates_map = generate_gates_map(best_trees_dump, gate_features_inputs)
+        sys_description = create_system_description(curr_gates_map, number_of_outputs)
+
+        # train_set_error = get_model_error(best_trees_dump, data_dump)
+        # print('train_set_error: ', train_set_error)
+        if len(orig_data) > 0:
+            delete_data_index_list = [ind for ind in data.index if ind in orig_data.index]
+            test_set = orig_data.copy().drop(delete_data_index_list)
+            if len(test_set) > 0:
+                test_set, _ = apply_new_attributes(induced - 1, test_set,
+                                                   len(test_set.columns.values) - number_of_outputs,
+                                                   gate_features_inputs, len(gate_features_inputs) - 1,
+                                                   len(gate_features_inputs))
+                test_set, _ = apply_new_attributes(induced, test_set, non_not_max_input_index,
+                                                   gate_features_inputs,
+                                                   non_not_max_input_index,
+                                                   non_not_max_input_index + 1)
+                test_set_error = get_model_error(best_trees_dump, test_set, outputs)
+                print('test_set_error: ' + str(test_set_error) + " test size: " + str(len(test_set)))
+
+
+    metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
+                                 'sys_description': sys_description,
+                                 'test_set_error': test_set_error,
+                                 'oa_is_optimal': oa_is_optimal}
+
+
+# get_component_distribution_metric(expected_gates_map, best_trees_dump, best_quality, number_of_outputs, gate_features_inputs)
 def generate_gates_map(trees_dump, gate_features):
     curr_gates_map = {}
     # all trees are decision stumps, merge them all to distinct gates with inputs
@@ -569,8 +632,11 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 
 if __name__ == '__main__':
-    circuit_name = "74182"
+    enable_write_experiments_to_DB = False
+    write_iterations_batch_size = 5
+    circuit_name = "c17"
     # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
+    # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 360, 427, 468, 468, 468, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485]
     # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 372, 425, 450, 450, 450, 462, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487]
     pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
@@ -580,21 +646,14 @@ if __name__ == '__main__':
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
                                     use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
-                                    random_batch_size=int(round(len(orig_data)*0.25)),
+                                    random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2)
 
     print("Working on: " + ALCS_configuration.file_name)
 
     oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
-
-    with open(circuit_name + '.txt', 'a') as console_file:
-
-        start_time = int(round(time.time() * 1000))
-        metrics_by_iteration = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map)
-        end_time = int(round(time.time() * 1000))
-
-        run_time = (end_time - start_time)/1000
-        print("took: %.5f sec" % run_time)
-
-        write_experiment(get_current_git_version(), run_time, ALCS_configuration, metrics_by_iteration)
+    git_version = get_current_git_version()
+    metrics_by_iteration, induced, experiment_fk = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size, enable_write_experiments_to_DB, git_version)
+    if len(metrics_by_iteration) > 0:
+        write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration, write_iterations_batch_size, git_version)

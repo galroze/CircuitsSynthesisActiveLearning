@@ -82,4 +82,4 @@ def get_current_git_version():
 
 
 def get_metric_to_persist(metric, entry):
-    return metric[entry] if metric.get(entry) is not None else -1
+    return metric[entry] if ((metric.get(entry) is not None) or ((metric.get(entry) is not None) and (len(metric.get(entry)) > 0))) else -1
