@@ -538,7 +538,6 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         # console_file.write("=============")
         print ("=============")
 
-        before = int(round(time.time() * 1000))
         evaluate_metrics(metrics_by_iteration, orig_data, data, induced, outputs, num_of_instances, oa_is_optimal, best_quality, best_trees_dump,
                              gate_features_inputs, number_of_outputs, non_not_max_input_index)
         end_time = int(round(time.time() * 1000))
