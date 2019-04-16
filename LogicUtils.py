@@ -1,6 +1,5 @@
 import pandas
 import numpy as np
-import sys
 import git
 
 
@@ -25,7 +24,7 @@ def trim_oa_to_fit_inputs(oa, input_size):
     return OA(trimmed_oa_array, input_size, oa.is_optimal)
 
 
-def get_transformed_att_value (data, att_names, gate):
+def get_transformed_att_value(data, att_names, gate):
     first_value = True
     for att in att_names:
         if not isinstance(att, str):
@@ -60,9 +59,9 @@ def get_nearest_oa(oa_list, value):
     possible_att_values = np.asarray(possible_att_values)
 
     diff_array = possible_att_values - value
-    diff_array[diff_array < 0] = sys.maxsize # get only att higher than value
+    diff_array[diff_array < 0] = 2147483647 # get only att higher than value
     nearest_value_index = diff_array.argmin()
-    if nearest_value_index == sys.maxsize:
+    if nearest_value_index == 2147483647:
         raise ValueError('no OA found for data')
     return oa_list[nearest_value_index]
 
