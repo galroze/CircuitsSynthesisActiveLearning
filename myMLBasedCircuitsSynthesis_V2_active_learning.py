@@ -538,7 +538,8 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         # console_file.write("=============")
         print ("=============")
 
-        evaluate_metrics(metrics_by_iteration, data, induced, outputs, num_of_insances, oa_is_optimal, best_quality, best_trees_dump,
+        before = int(round(time.time() * 1000))
+        evaluate_metrics(metrics_by_iteration, orig_data, data, induced, outputs, num_of_instances, oa_is_optimal, best_quality, best_trees_dump,
                              gate_features_inputs, number_of_outputs, non_not_max_input_index)
         end_time = int(round(time.time() * 1000))
         metrics_by_iteration[induced]['iteration_time'] = (end_time - start_time) / 1000
@@ -548,7 +549,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     return metrics_by_iteration, induced, experiment_fk
 
 
-def evaluate_metrics(metrics_by_iteration, data, induced, outputs, num_of_insances, oa_is_optimal, best_quality, best_trees_dump, gate_features_inputs, number_of_outputs, non_not_max_input_index):
+def evaluate_metrics(metrics_by_iteration, orig_data, data, induced, outputs, num_of_insances, oa_is_optimal, best_quality, best_trees_dump, gate_features_inputs, number_of_outputs, non_not_max_input_index):
     sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
                        'degree_distribution': {}, 'avg_vertex_degree': 0}
     test_set_error = -1
