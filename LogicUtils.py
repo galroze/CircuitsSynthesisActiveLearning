@@ -1,7 +1,7 @@
 import pandas
 import numpy as np
 import git
-
+from LogicTypes import *
 
 class OA:
     def __init__(self, array, num_of_att, is_optimal):
@@ -43,6 +43,39 @@ def get_transformed_att_value(data, att_names, gate):
             transformed_column.append(True)
         else:
             transformed_column.append(False)
+    return transformed_column
+
+
+def get_transformed_att_value_new(orig_cached_full_data, new_gate_feature, data, att_names, gate, generate_not_gate_for_cache):
+    new_attribute_name = new_gate_feature.to_string()
+    if orig_cached_full_data.__contains__(new_attribute_name):
+        transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
+    else:
+        first_value = True
+        for att in att_names:
+            if not isinstance(att, str):
+                att = att.to_string()
+            val = orig_cached_full_data[att]
+            val = val.replace(False, "False").replace(True, "True")
+            if first_value:
+                att_val_column = "gate.f(" + val
+                first_value = False
+            else:
+                att_val_column += "," + val
+        att_val_column += ")"
+
+        transformed_column = []
+        for att_val in att_val_column:
+            tmp = eval(att_val)
+            if tmp:
+                transformed_column.append(True)
+            else:
+                transformed_column.append(False)
+
+        orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
+        if generate_not_gate_for_cache:
+            get_transformed_att_value_new(orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data,(new_gate_feature,), OneNot, False)
+        transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
     return transformed_column
 
 

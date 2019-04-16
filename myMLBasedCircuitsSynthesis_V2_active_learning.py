@@ -15,6 +15,8 @@ from Experiments.ExperimentServiceImpl import write_iterations
 from dataSystemsUtil import create_system_description
 
 
+orig_cached_data = []
+
 class ActiveLearningCircuitSynthesisConfiguration:
 
     def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
@@ -40,9 +42,14 @@ class ActiveLearningCircuitSynthesisConfiguration:
         return '\n'.join('%s=%s' % item for item in vars(self).items())
 
 
-def insert_gate_as_att(data, gate_feature, max_input_index):
+def insert_gate_as_att(data, gate_feature, max_input_index, use_cache):
+    global orig_cached_data
     new_attribute_name = gate_feature.to_string()
-    new_column = get_transformed_att_value(data, gate_feature.inputs, gate_feature.gate)
+    if use_cache:
+        new_column = get_transformed_att_value_new(orig_cached_data, gate_feature, data,
+                                                                 gate_feature.inputs, gate_feature.gate, True)
+    else:
+        new_column = get_transformed_att_value(data, gate_feature.inputs, gate_feature.gate)
     data.insert(max_input_index, new_attribute_name, new_column)
     max_input_index += 1
     return max_input_index
@@ -219,7 +226,7 @@ def get_batch_using_oa(data, max_input_index, oa):
 def apply_new_attributes(induced, data, max_input_index, combinations_and_gates, start_index, end_index):
     if induced > 0:
         for combination_gate_tuple_index in range(start_index, end_index):
-            max_input_index = insert_gate_as_att(data,combinations_and_gates[combination_gate_tuple_index], max_input_index)
+            max_input_index = insert_gate_as_att(data, combinations_and_gates[combination_gate_tuple_index], max_input_index, True)
     return data, max_input_index
 
 
@@ -379,7 +386,7 @@ def get_data_for_iteration(ALCS_conf, orig_data, curr_data, non_not_max_input_in
     if induced != 0:
         max_input_index = len(data.columns.values) - number_of_outputs
         gate_feature = GateFeature(OneNot, [gate_features_inputs[non_not_max_input_index - 1]])
-        max_input_index = insert_gate_as_att(data, gate_feature, max_input_index)
+        max_input_index = insert_gate_as_att(data, gate_feature, max_input_index, True)
         gate_features_inputs.append(gate_feature)
 
     return orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal
@@ -451,7 +458,6 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
 
     orig_max_input_index = len(orig_data.columns.values) - number_of_outputs
     inputs = orig_data.columns[:orig_max_input_index]
-    # console_file.write(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
     print(str(orig_max_input_index) + " intputs: " + str(inputs) + ", \n" + str(number_of_outputs) + " outputs: " + str(outputs))
 
     print("Initial data:")
@@ -471,10 +477,12 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     non_not_max_input_index = orig_max_input_index
     for not_gate_argument_tuple in not_gate_arguments:
         gate_feature = GateFeature(OneNot, [not_gate_argument_tuple[0]])
-        max_input_index = insert_gate_as_att(orig_data, gate_feature, max_input_index)
+        max_input_index = insert_gate_as_att(orig_data, gate_feature, max_input_index, False)
         gate_features_inputs.append(gate_feature)
 
     data = pandas.DataFrame(columns=orig_data.columns.values, dtype=bool)
+    global orig_cached_data
+    orig_cached_data = orig_data.copy()
 
     while induced < ALCS_configuration.max_num_of_iterations:
         start_time = int(round(time.time() * 1000))
@@ -504,7 +512,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                     new_gate_feature = GateFeature(possible_gate, list(curr_arg_combination))
                     new_attribute_name = new_gate_feature.to_string()
                     if (not data.__contains__(new_attribute_name)):
-                        new_column = get_transformed_att_value(data, curr_arg_combination, possible_gate)
+                        new_column = get_transformed_att_value_new(orig_cached_data, new_gate_feature, data, curr_arg_combination, possible_gate, True)
                         data.insert(non_not_max_input_index, new_attribute_name, new_column)
 
                         tree_quality = 0
