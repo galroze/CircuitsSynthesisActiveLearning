@@ -5,7 +5,6 @@ import time
 import re
 import datetime
 
-from more_itertools import first
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import _tree
 from LogicUtils import *
