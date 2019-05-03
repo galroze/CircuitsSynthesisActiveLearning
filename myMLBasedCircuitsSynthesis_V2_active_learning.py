@@ -46,8 +46,8 @@ def insert_gate_as_att(data, gate_feature, max_input_index, use_cache):
     global orig_cached_data
     new_attribute_name = gate_feature.to_string()
     if use_cache:
-        new_column = get_transformed_att_value_new(orig_cached_data, gate_feature, data,
-                                                                 gate_feature.inputs, gate_feature.gate, True)
+        new_column = get_transformed_att_value_cache_enabled(orig_cached_data, gate_feature, data,
+                                                             gate_feature.inputs, gate_feature.gate, True)
     else:
         new_column = get_transformed_att_value(data, gate_feature.inputs, gate_feature.gate)
     data.insert(max_input_index, new_attribute_name, new_column)
@@ -494,9 +494,8 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         orig_data, data, non_not_max_input_index, max_input_index, gate_features_inputs, curr_oa, oa_is_optimal = \
             get_data_for_iteration(ALCS_configuration, orig_data, data, non_not_max_input_index, max_input_index, curr_oa,
                                    induced, oa_by_strength_map, gate_features_inputs, values_to_explore_by_tree, number_of_outputs)
-        num_of_insances = len(data)
-        print("\n**** iteration #: " + str(induced) + ", " + "# of instances: " + str(num_of_insances) + " ****\n")
-
+        num_of_instances = len(data)
+        print("\n**** iteration #: " + str(induced) + ", " + "# of instances: " + str(num_of_instances) + " ****\n")
         # Now working on all other gates
         possible_arguments_combinations = []
 
@@ -504,15 +503,16 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         for i in range(max(ALCS_configuration.subset_min, 2), ALCS_configuration.subset_max + 1):
             possible_arguments_combinations += itertools.combinations(gate_features_inputs, i)
 
-        #for each combination
+        # for each combination
         for curr_arg_combination in possible_arguments_combinations:
-            #for each possible gate
+            # for each possible gate
             for possible_gate in ALCS_configuration.possible_gates:
                 if possible_gate.numInputs == len(curr_arg_combination):
                     new_gate_feature = GateFeature(possible_gate, list(curr_arg_combination))
                     new_attribute_name = new_gate_feature.to_string()
                     if (not data.__contains__(new_attribute_name)):
-                        new_column = get_transformed_att_value_new(orig_cached_data, new_gate_feature, data, curr_arg_combination, possible_gate, True)
+                        new_column = get_transformed_att_value_cache_enabled(orig_cached_data, new_gate_feature, data,
+                                                                             curr_arg_combination, possible_gate, True)
                         data.insert(non_not_max_input_index, new_attribute_name, new_column)
 
                         tree_quality = 0
@@ -524,7 +524,8 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                             tree_quality += tree_data.tree_.node_count
                             fitted_trees[outputs[output_index]] = tree_data
 
-                        if (tree_quality < best_quality) or ((tree_quality == best_quality) and (is_better_combination(new_attribute_name, best_attribute_gates_map))):
+                        if (tree_quality < best_quality) or ((tree_quality == best_quality) and (
+                        is_better_combination(new_attribute_name, best_attribute_gates_map))):
                             best_quality = tree_quality
                             best_gate_feature = new_gate_feature
                             best_attribute_name = new_attribute_name
