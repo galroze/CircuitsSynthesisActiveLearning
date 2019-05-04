@@ -65,7 +65,11 @@ def get_input_names(data):
 
 
 def get_output_names(data):
-    return data.columns[pandas.Series(data.columns).str.startswith('o')]
+    out_col = []
+    for col in data.columns:
+        if col[0] == 'o' and col[1].isdigit():
+            out_col.append(col)
+    return out_col
 
 
 def get_nearest_oa(oa_list, value):
