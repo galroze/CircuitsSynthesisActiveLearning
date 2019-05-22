@@ -3,6 +3,7 @@ import numpy as np
 import git
 from LogicTypes import *
 
+
 class OA:
     def __init__(self, array, num_of_att, is_optimal):
         self.array = array
@@ -21,7 +22,7 @@ def read_oa(path):
 
 def trim_oa_to_fit_inputs(oa, input_size):
     trimmed_oa_array = [oa_line[:input_size] for oa_line in oa.array.copy()]
-    return OA(trimmed_oa_array, input_size, oa.is_optimal)
+    return OA(list(set(trimmed_oa_array)), input_size, oa.is_optimal)
 
 
 def get_transformed_att_value(data, att_names, gate):
@@ -46,16 +47,16 @@ def get_transformed_att_value(data, att_names, gate):
     return transformed_column
 
 
-def get_transformed_att_value_cache_enabled(orig_cached_full_data, new_gate_feature, data, att_names, gate, generate_not_gate_for_cache):
+def get_transformed_att_value_cache_enabled(orig_cached_full_data, new_gate_feature, data, generate_not_gate_for_cache):
     new_attribute_name = new_gate_feature.to_string()
     if orig_cached_full_data.__contains__(new_attribute_name):
         transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
     else:
-        transformed_column = get_transformed_att_value(orig_cached_full_data, att_names, gate)
+        transformed_column = get_transformed_att_value(orig_cached_full_data, new_gate_feature.inputs, new_gate_feature.gate)
         orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
         # for caching not gate
         if generate_not_gate_for_cache:
-            get_transformed_att_value_cache_enabled(orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data, (new_gate_feature,), OneNot, False)
+            get_transformed_att_value_cache_enabled(orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data, False)
         transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
     return transformed_column
 
@@ -77,10 +78,11 @@ def get_nearest_oa(oa_list, value):
     possible_att_values = np.asarray(possible_att_values)
 
     diff_array = possible_att_values - value
-    diff_array[diff_array < 0] = 2147483647 # get only att higher than value
+    diff_array[diff_array < 0] = 2147483647  # get only att higher than value
     nearest_value_index = diff_array.argmin()
-    if nearest_value_index == 2147483647:
-        raise ValueError('no OA found for data')
+    if diff_array[nearest_value_index] == 2147483647:
+        print('not enough attributes in current strength. Possible: ' + str(possible_att_values) + ', given: ' + str(value))
+        return None
     return oa_list[nearest_value_index]
 
 
