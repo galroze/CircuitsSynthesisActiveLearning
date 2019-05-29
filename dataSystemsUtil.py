@@ -4,6 +4,7 @@ import math
 from LogicTypes import *
 from LogicUtils import *
 import collections
+from decimal import Decimal
 
 logic_types = {OneNot.name: OneNot, TwoXor.name: TwoXor, TwoAnd.name: TwoAnd, ThreeAnd.name: ThreeAnd,
                FourAnd.name: FourAnd, FiveAnd.name: FiveAnd, EightAnd.name: EightAnd, NineAnd.name: NineAnd,
@@ -250,6 +251,16 @@ def create_system_description(curr_gates_map, number_of_outputs):
 
     return {'edges': edges, 'vertices': vertices, 'comp_distribution_map': comp_distribution_map,
             'degree_distribution': degree_distribution, 'avg_vertex_degree': avg_vertex_degree}
+
+
+def read_original_metrics(circuit_name):
+    original_metrics = {}
+    with open("E:\\ise_masters\\gal_thesis\\data_sets\\original_metrics\\" + circuit_name + ".txt") as original_metrics_file:
+        metrics = original_metrics_file.read().split('\n')
+        for metric_tuple in metrics:
+            metric_tuple = metric_tuple.split('=')
+            original_metrics[metric_tuple[0]] = Decimal(metric_tuple[1])
+    return original_metrics
 
 
 if __name__ == '__main__':

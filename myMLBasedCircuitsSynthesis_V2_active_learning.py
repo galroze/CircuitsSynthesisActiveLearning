@@ -13,7 +13,7 @@ from LogicTypes import *
 from ActiveFeaturesServiceImpl import *
 from Experiments.ExperimentServiceImpl import write_experiment
 from Experiments.ExperimentServiceImpl import write_iterations
-from dataSystemsUtil import create_system_description
+from dataSystemsUtil import *
 
 
 orig_cached_data = []
@@ -358,12 +358,12 @@ def get_model_error(best_trees_dump, data, active_features):
 
 
 def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration,
-                write_iterations_batch_size, git_version):
+                original_metrics, write_iterations_batch_size, git_version):
 
     def first_batch(induced, write_iterations_batch_size):
         return induced == write_iterations_batch_size
 
-    if (write_iterations_batch_size == 1) or ((induced > 1) & ((induced  % write_iterations_batch_size) == 0)):
+    if (write_iterations_batch_size == 1) or ((induced > 1) & ((induced % write_iterations_batch_size) == 0)):
         if enable_write_experiments_to_DB:
             # first batch
             if first_batch(induced, write_iterations_batch_size):
@@ -379,26 +379,87 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append("\n\n* configuration:\n")
                 lines_to_write.append(ALCS_configuration.__str__())
                 lines_to_write.append("\n\n* Iterations:\n")
-                lines_to_write.append("\niteration_number\tnum_of_instances\tedges\tvertices\tcomponent_distribution_and"
-                                      "\tcomponent_distribution_or\tcomponent_distribution_not\tcomponent_distribution_xor"
-                                      "\tdegree_distribution\tavg_vertex_degree\ttest_set_error\toa_is_optimal\titeration_time\n")
+                lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\ttest_set_error\tedges"
+                                      "\tedges_dist\tvertices\tvertices_dist\tcomponent_distribution_and"
+                                      "\tcomponent_distribution_and_dist"
+                                      "\tcomponent_distribution_or\tcomponent_distribution_or_dist"
+                                      "\tcomponent_distribution_not\tcomponent_distribution_not_dist"
+                                      "\tcomponent_distribution_xor\tcomponent_distribution_xor_dist"
+                                      "\tavg_vertex_degree\tavg_vertex_degree_dist\toa_is_optimal"
+                                      "\tdegree_distribution\tdegree_distribution1_dist\n")
 
             for iteration, metrics in metrics_by_iteration.items():
                 lines_to_write.append(str(iteration))
-                lines_to_write.append("\t" + str(metrics["num_of_instances"]))
-                lines_to_write.append("\t" + str(metrics["sys_description"]["edges"]))
-                lines_to_write.append("\t" + str(metrics["sys_description"]["vertices"]))
-                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoAnd.name)))
-                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoOr.name)))
-                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], OneNot.name)))
-                lines_to_write.append("\t" + str(get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoXor.name)))
-                degree_distribution = ",".join([(str(degree) + ':' + str(degree_count)) for degree, degree_count in
-                          metrics["sys_description"]['degree_distribution'].items()])
-                lines_to_write.append("\t" + ("-1" if len(degree_distribution) == 0 else degree_distribution))
-                lines_to_write.append("\t" + str(metrics["sys_description"]["avg_vertex_degree"]))
-                lines_to_write.append("\t" + str(metrics["test_set_error"]))
-                lines_to_write.append("\t" + str(metrics["oa_is_optimal"]))
                 lines_to_write.append("\t" + str(metrics["iteration_time"]))
+                lines_to_write.append("\t" + str(metrics["num_of_instances"]))
+                lines_to_write.append("\t" + str(metrics["test_set_error"]))
+
+                lines_to_write.append("\t" + str(metrics["sys_description"]["edges"]))
+                edges_dist = calculate_dist_metric(original_metrics["edges"], metrics["sys_description"]["edges"])
+                lines_to_write.append("\t" + str(edges_dist))
+                
+                lines_to_write.append("\t" + str(metrics["sys_description"]["vertices"]))
+                vertices_dist = calculate_dist_metric(original_metrics["vertices"], metrics["sys_description"]["vertices"])
+                lines_to_write.append("\t" + str(vertices_dist))
+
+                component_distribution_and = get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoAnd.name)
+                lines_to_write.append("\t" + str(component_distribution_and))
+                component_distribution_and_dist = calculate_dist_metric(original_metrics["component_distribution_and"],
+                                                                        component_distribution_and)
+                lines_to_write.append("\t" + str(component_distribution_and_dist))
+
+                component_distribution_or = get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoOr.name)
+                lines_to_write.append("\t" + str(component_distribution_or))
+                component_distribution_or_dist = calculate_dist_metric(original_metrics["component_distribution_or"],
+                                                                       component_distribution_or)
+                lines_to_write.append("\t" + str(component_distribution_or_dist))
+
+                component_distribution_not = get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], OneNot.name)
+                lines_to_write.append("\t" + str(component_distribution_not))
+                component_distribution_not_dist = calculate_dist_metric(original_metrics["component_distribution_not"],
+                                                                        component_distribution_not)
+                lines_to_write.append("\t" + str(component_distribution_not_dist))
+
+                component_distribution_xor = get_metric_to_persist(metrics["sys_description"]["comp_distribution_map"], TwoXor.name)
+                lines_to_write.append("\t" + str(component_distribution_xor))
+                component_distribution_xor_dist = calculate_dist_metric(original_metrics["component_distribution_xor"],
+                                                                        component_distribution_xor)
+                lines_to_write.append("\t" + str(component_distribution_xor_dist))
+
+                lines_to_write.append("\t" + str(metrics["sys_description"]["avg_vertex_degree"]))
+                avg_vertex_degree_dist = calculate_dist_metric(original_metrics["avg_vertex_degree"],
+                                                      metrics["sys_description"]["avg_vertex_degree"])
+                lines_to_write.append("\t" + str(avg_vertex_degree_dist))
+
+                lines_to_write.append("\t" + str(metrics["oa_is_optimal"]))
+
+                # We've definitely converged
+                if metrics["sys_description"]['degree_distribution'][1] != -1:
+                    original_metric_degrees = [int(key[len("degree_distribution"):]) for key in original_metrics.keys()
+                                               if key.startswith("degree_distribution")]
+                    current_metric_degrees = list(metrics["sys_description"]['degree_distribution'].keys())
+                    original_metric_degrees.extend(current_metric_degrees)
+                    max_degree = max(original_metric_degrees)
+                    for degree in range(1, max_degree + 1):
+                        if original_metrics.__contains__("degree_distribution" + str(degree)):
+                            if metrics["sys_description"]['degree_distribution'].__contains__(degree):
+                                curr_degree_dist = original_metrics["degree_distribution" + str(degree)]
+                                degree_count = metrics["sys_description"]['degree_distribution'][degree]
+                                lines_to_write.append("\t" + str(degree_count))
+                                # original and current have values
+                                lines_to_write.append("\t" + str(calculate_dist_metric(curr_degree_dist, degree_count)))
+                            else:
+                                # original has value, current doesn't
+                                lines_to_write.append("\t\t0")
+                        else:
+                            if metrics["sys_description"]['degree_distribution'].__contains__(degree):
+                                lines_to_write.append("\t" + str(metrics["sys_description"]['degree_distribution'][degree]))
+                                # original doesn't have value, current does
+                                lines_to_write.append("\t0")
+                            else:
+                                # original and current don't have values
+                                lines_to_write.append("\t\t1")
+
                 lines_to_write.append("\n")
 
             with open(circuit_name + '_experiments_log.txt', 'a') as experiments_log_file:
@@ -408,7 +469,29 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
     return experiment_fk, metrics_by_iteration
 
 
-def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size, enable_write_experiments_to_DB, git_version):
+def calculate_dist_metric(numerator, denominator):
+    # metric value doesn't exist
+    if denominator == -1:
+        return ""
+    # original didn't have value
+    if numerator == -1:
+        # metric had value
+        if denominator != 0:
+            return 0
+        # both didn't have metric
+        else:
+            return 1
+    else:
+        # both have values
+        if denominator != 0:
+            return round(Decimal(numerator) / Decimal(denominator), 6)
+        # original has value but current doesn't
+        else:
+            return 0
+
+
+def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size,
+             enable_write_experiments_to_DB, git_version, original_metrics):
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
 
@@ -506,7 +589,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
             if ALCS_configuration.use_explore_nodes:
                 iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
         print("=============")
-        evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, iteration_context.iteration_num, outputs,
+        evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, iteration_context.iteration_num,
                          num_of_instances, oa_is_optimal, best_quality, best_trees_dump, number_of_outputs)
         iteration_context.active_features.remove(best_gate_feature)  # for printing trees and exploration purposes
 
@@ -514,16 +597,29 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         metrics_by_iteration[iteration_context.iteration_num]['iteration_time'] = (end_time - start_time) / 1000
         experiment_fk, metrics_by_iteration = write_batch(enable_write_experiments_to_DB, ALCS_configuration,
                                                           iteration_context.iteration_num, experiment_fk,
-                                                          metrics_by_iteration, write_iterations_batch_size, git_version)
+                                                          metrics_by_iteration, original_metrics,
+                                                          write_iterations_batch_size, git_version)
         iteration_context.iteration_num += 1
 
     return metrics_by_iteration, iteration_context.iteration_num, experiment_fk
 
 
-def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced, outputs, num_of_insances, oa_is_optimal,
+def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced, num_of_insances, oa_is_optimal,
                      best_quality, best_trees_dump, number_of_outputs):
-    sys_description = {'edges': 0, 'vertices': 0, 'comp_distribution_map': {},
-                       'degree_distribution': {}, 'avg_vertex_degree': 0}
+    sys_description = {'edges': -1,
+                       'vertices': -1,
+                       'comp_distribution_map': {
+                           TwoAnd.name: -1,
+                           TwoOr.name: -1,
+                           TwoXor.name: -1,
+                           OneNot.name: -1
+                       },
+                       # degree 1 is the degree for all outputs which is always 1,
+                       # this is an indicator whether the metric is converged or not
+                       # if it didn't, it stays -1, if it did it is necessarily not -1.
+                       'degree_distribution': {1: -1},
+                       'avg_vertex_degree': -1
+                       }
     test_set_error = -1
 
     if best_quality <= 3 * number_of_outputs:
@@ -600,14 +696,14 @@ if __name__ == '__main__':
     # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
     # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 360, 427, 468, 468, 468, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485]
     # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 372, 425, 450, 450, 450, 462, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487]
-    pre_def_list = [8,12,22,28,28,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+    pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [TwoXor, TwoAnd, TwoOr]
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
-                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
+                                    use_orthogonal_arrays=False, use_explore_nodes=False, randomize_remaining_data=False,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
@@ -618,6 +714,10 @@ if __name__ == '__main__':
 
     oa_by_strength_map = init_orthogonal_arrays(ALCS_configuration.use_orthogonal_arrays)
     git_version = get_current_git_version()
-    metrics_by_iteration, induced, experiment_fk = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size, enable_write_experiments_to_DB, git_version)
+    original_metrics = read_original_metrics(circuit_name)
+    metrics_by_iteration, induced, experiment_fk = run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map,
+                                            write_iterations_batch_size, enable_write_experiments_to_DB, git_version,
+                                            original_metrics)
     if len(metrics_by_iteration) > 0:
-        write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration, write_iterations_batch_size, git_version)
+        write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration,
+                    original_metrics,write_iterations_batch_size, git_version)
