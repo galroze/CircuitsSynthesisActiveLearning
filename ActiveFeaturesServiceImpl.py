@@ -20,20 +20,6 @@ def init_feature_info(curr_iteration, feature_gate, output_names):
             ITER_UPDATE: curr_iteration}
 
 
-def get_active_features_for_oa(active_features):
-    # using a list and not a set to keep features original order
-    no_logical_duplicates_active_features = []
-    for feature in active_features:
-        # stripping feature name of it's NOT gate if exists, otherwise keep original
-        while feature.gate == OneNot:
-            feature = feature.inputs[0]  # Not gate has only one input
-
-        # adding features to the list, if original and equivalent NOT gate both existed they will be added only once
-        if not no_logical_duplicates_active_features.__contains__(feature):
-            no_logical_duplicates_active_features.append(feature)
-    return no_logical_duplicates_active_features
-
-
 # getting the relevant active features for starting a new iteration
 def get_active_features(features_info_map):
     active_features = []
@@ -64,20 +50,25 @@ def update_score_apply_accumulated_binary_participation_approach(feature_info_ma
 
 
 # Updating all features' scores after an iteration is done and a new attribute was chosen
-def update_att_score(ALCS_configuration, features_info_map, output_name, tree, induced):
+def update_att_score(ALCS_configuration, active_features, features_info_map, output_name, tree, induced):
     tree_ = tree.tree_
     nodes_impurity = tree_.impurity
     node_index = 0
     # iterating feature_inputs to obtain same order as the decision tree's input data for getting the impurity
-    for feature_input in features_info_map:
-        feature_info_map = features_info_map[feature_input]
+    for feature_input in active_features:
+        feature_info_map = features_info_map[feature_input.to_string()]
         if feature_info_map[ACTIVE]:
             tree_feature_index = np.where(tree_.feature == node_index)[0]  # Get the index of a feature
             # feature took part in current tree
             node_impurity = nodes_impurity[tree_feature_index[0]] if len(tree_feature_index) > 0 else 0
         else:
             node_impurity = 0  # feature didn't take part in current tree, it's impurity should be 0
-        feature_info_map[IMPURITY_BY_OUTPUT_ITERATION][output_name].insert(induced, node_impurity)
+        # updating impurity using all trees of best chosen features, therefore updating and not overriding
+        curr_impurity_list = feature_info_map[IMPURITY_BY_OUTPUT_ITERATION][output_name]
+        if len(curr_impurity_list) == induced:
+            curr_impurity_list[induced - 1] = curr_impurity_list[induced - 1] + node_impurity
+        else:
+            curr_impurity_list.insert(induced - 1, node_impurity)
         update_score_apply_accumulated_binary_participation_approach(feature_info_map, output_name, induced,
                                                             ALCS_configuration.min_prev_iteration_participation)
         node_index += 1

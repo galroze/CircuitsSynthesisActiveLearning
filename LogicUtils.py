@@ -5,7 +5,8 @@ from LogicTypes import *
 
 
 class OA:
-    def __init__(self, array, num_of_att, is_optimal):
+    def __init__(self, name, array, num_of_att, is_optimal):
+        self.name = name
         self.array = array
         self.num_of_att = num_of_att
         self.is_optimal = is_optimal
@@ -16,13 +17,16 @@ def read_oa(path):
         oa_array = oa_file.read().split('\n').copy()
     oa_num_of_att = len(oa_array[0])
     splitted_path = path.split('\\')
-    new_oa = OA(oa_array, oa_num_of_att, 0 if splitted_path[len(splitted_path) - 1].startswith('GEN') else 1)
+    new_oa = OA(splitted_path[len(splitted_path) - 1][:len(splitted_path[len(splitted_path) - 1]) - len('.txt')],
+                oa_array,
+                oa_num_of_att,
+                0 if splitted_path[len(splitted_path) - 1].startswith('GEN') else 1)
     return new_oa
 
 
 def trim_oa_to_fit_inputs(oa, input_size):
     trimmed_oa_array = [oa_line[:input_size] for oa_line in oa.array.copy()]
-    return OA(list(set(trimmed_oa_array)), input_size, oa.is_optimal)
+    return OA(oa.name, list(set(trimmed_oa_array)), input_size, oa.is_optimal)
 
 
 def get_transformed_att_value(data, att_names, gate):
@@ -62,7 +66,8 @@ def get_transformed_att_value_cache_enabled(orig_cached_full_data, new_gate_feat
 
 
 def get_input_names(data):
-    return data.columns[pandas.Series(data.columns).str.startswith('i')]
+    return [str(col) for col in data.columns[pandas.Series(data.columns).str.startswith('i')]
+            if (col[0] == 'i' and col[1].isdigit())]
 
 
 def get_output_names(data):

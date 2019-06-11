@@ -125,27 +125,22 @@ def get_gates_map(attribute_name):
     return gates_map
 
 
-def process_oa(active_features, next_oa, values_to_explore_by_tree):
-    # apply values to explore filter over next oa, make sure there are more or equal att as values to explore,
-    # if not(print warning) use the first values as they are ordered from root to leaf
-    trees_joint_next_oa_array = []
+def get_batch_using_explorable_nodes(data, values_to_explore_by_tree):
     if len(values_to_explore_by_tree) > 0:
-        at_least_one_value_exists = False
+        batch_indices = []
         for tree_values in values_to_explore_by_tree.values():
-            # make sure all values to explore(from previous iteration) exist in active fearures(of next iteration) - not neccessarily
-            tree_values = [tree_value for tree_value in tree_values if tree_value[0] in active_features]
-            if (len(tree_values) > 0) & (len(next_oa) > 0):
-                at_least_one_value_exists = True
-                if len(tree_values) > len(next_oa[0]):
-                    tree_values = tree_values.copy()[:len(next_oa[0])]
-                    print("******** WARN - Orthogonal array has less attributes than inputs(values to explore) *******")
-                oa_by_values_to_explore = get_oa_by_values_to_explore(tree_values, active_features, next_oa)
-                trees_joint_next_oa_array = list(set(trees_joint_next_oa_array) | set(oa_by_values_to_explore))
-                next_oa = [x for x in next_oa if x not in oa_by_values_to_explore]
-        if at_least_one_value_exists:
-            next_oa = trees_joint_next_oa_array
-
-    return next_oa
+            # dropping former tree batch that is already included in the returned batch
+            potential_batch = data.drop(batch_indices)
+            for gate_feature, value in tree_values:
+                if len(potential_batch) > 0:
+                    value = True if value == 1 else False
+                    potential_batch = potential_batch[potential_batch[gate_feature.to_string()] == value]
+                else:
+                    break
+            batch_indices.extend(potential_batch.index)
+        return list(set(batch_indices))
+    else:
+        return list(data.index)
 
 
 def get_value_to_explore(value, values_to_explore):
@@ -194,13 +189,12 @@ def get_instances_indices_by_values_to_explore(values_to_explore_by_tree, data_f
         return instances_indices
 
 
-def get_batch_indices_using_oa(data, potential_data_indices, active_features, oa):
-    active_features_names_list = [feature.to_string() for feature in active_features]
+def get_batch_using_oa(data, potential_data_indices, active_features_names_list, oa):
     # converting oa list to dataframe for fast joining oa with data
     oa_df = pd.DataFrame([list(oa_item) for oa_item in oa], columns=active_features_names_list)
     oa_df = oa_df.replace('1', True).replace('0', False)
     merged_df = data.loc[potential_data_indices].reset_index().merge(oa_df, how="inner", on=active_features_names_list).set_index('index')
-    return list(merged_df.index)
+    return merged_df
 
 
 def generate_gate_features(inputs):
@@ -307,8 +301,7 @@ def get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_in
 
 
 def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
-
-    oa_is_optimal = -1
+    nearest_oa_name = '-'
     # remove used indices from total orig data indices
     potential_data_indices = np.delete(orig_data.index.copy(deep=True), iteration_context.curr_instances_indices).tolist()
 
@@ -316,13 +309,13 @@ def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
         next_strength = str(iteration_context.iteration_num - 1 + ALCS_conf.min_oa_strength)
         if iteration_context.oa_by_strength_map.__contains__(next_strength):
 
-            active_features_for_oa = get_active_features_for_oa(iteration_context.active_features)
+            active_features_for_oa = get_input_names(orig_data)
             nearest_oa = get_nearest_oa(iteration_context.oa_by_strength_map[next_strength], len(active_features_for_oa))
             if nearest_oa is not None:
-                oa_is_optimal = nearest_oa.is_optimal
+                nearest_oa_name = nearest_oa.name
                 next_oa = trim_oa_to_fit_inputs(nearest_oa, len(active_features_for_oa))
-                curr_oa = process_oa(active_features_for_oa, next_oa.array, iteration_context.values_to_explore_by_tree)
-                data_batch_indices = get_batch_indices_using_oa(orig_data, potential_data_indices, active_features_for_oa, curr_oa)
+                data_batch = get_batch_using_oa(orig_data, potential_data_indices, active_features_for_oa, next_oa.array)
+                data_batch_indices = get_batch_using_explorable_nodes(data_batch, iteration_context.values_to_explore_by_tree)
             else:  # no OA found(probably not enough attributes in current strength)
                 data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
         else:  # no more OA strengths
@@ -331,8 +324,8 @@ def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
         data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
 
     # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
-    if iteration_context.new_gate_feature is not None:
-        gate_feature = GateFeature(OneNot, [iteration_context.new_gate_feature])
+    for new_gate_feature in iteration_context.new_gate_features:
+        gate_feature = GateFeature(OneNot, [new_gate_feature])
         insert_gate_as_att(orig_data, gate_feature, True)
         features_info_map[gate_feature.to_string()] = init_feature_info(iteration_context.iteration_num - 1,
                                                             gate_feature, get_output_names(orig_data))
@@ -342,7 +335,7 @@ def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
     iteration_context.curr_instances_indices = np.array(list(iteration_context.curr_instances_indices) + data_batch_indices)
     iteration_data = orig_data.loc[iteration_context.curr_instances_indices].copy(deep=True)
 
-    return orig_data, iteration_data, oa_is_optimal
+    return orig_data, iteration_data, nearest_oa_name
 
 
 def get_model_error(best_trees_dump, data, active_features):
@@ -379,13 +372,14 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append("\n\n* configuration:\n")
                 lines_to_write.append(ALCS_configuration.__str__())
                 lines_to_write.append("\n\n* Iterations:\n")
-                lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\ttest_set_error\tedges"
+                lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\ttest_set_error\toa_name"
+                                      "\tedges"
                                       "\tedges_dist\tvertices\tvertices_dist\tcomponent_distribution_and"
                                       "\tcomponent_distribution_and_dist"
                                       "\tcomponent_distribution_or\tcomponent_distribution_or_dist"
                                       "\tcomponent_distribution_not\tcomponent_distribution_not_dist"
                                       "\tcomponent_distribution_xor\tcomponent_distribution_xor_dist"
-                                      "\tavg_vertex_degree\tavg_vertex_degree_dist\toa_is_optimal"
+                                      "\tavg_vertex_degree\tavg_vertex_degree_dist"
                                       "\tdegree_distribution\tdegree_distribution1_dist\n")
 
             for iteration, metrics in metrics_by_iteration.items():
@@ -393,6 +387,8 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append("\t" + str(metrics["iteration_time"]))
                 lines_to_write.append("\t" + str(metrics["num_of_instances"]))
                 lines_to_write.append("\t" + str(metrics["test_set_error"]))
+
+                lines_to_write.append("\t" + str(metrics["oa_name"]))
 
                 lines_to_write.append("\t" + str(metrics["sys_description"]["edges"]))
                 edges_dist = calculate_dist_metric(original_metrics["edges"], metrics["sys_description"]["edges"])
@@ -430,8 +426,6 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 avg_vertex_degree_dist = calculate_dist_metric(original_metrics["avg_vertex_degree"],
                                                       metrics["sys_description"]["avg_vertex_degree"])
                 lines_to_write.append("\t" + str(avg_vertex_degree_dist))
-
-                lines_to_write.append("\t" + str(metrics["oa_is_optimal"]))
 
                 # We've definitely converged
                 if metrics["sys_description"]['degree_distribution'][1] != -1:
@@ -504,6 +498,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     gate_features_inputs = generate_gate_features(inputs)
     values_to_explore_by_tree = {}
     metrics_by_iteration = {}
+    best_features_list = []
     experiment_fk = -1  # dummy experiment
 
     # FIRST ADD THE NOT GATE FOR ALL CURRENT INPUTS
@@ -520,7 +515,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     features_info_map = {curr_input.to_string(): init_feature_info(0, curr_input, outputs) for curr_input in gate_features_inputs}
 
     iteration_context = IterationContext(1, np.array([]), get_active_features(features_info_map), oa_by_strength_map,
-                                         None, values_to_explore_by_tree)
+                                         [], values_to_explore_by_tree)
 
     #############################################  -- STARTING ITERATIONS -- #########################################
     while iteration_context.iteration_num < ALCS_configuration.max_num_of_iterations:
@@ -530,7 +525,9 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         best_attribute_gates_map = {}
         update_features_activeness_for_iteration(features_info_map, ALCS_configuration.active_features_thresh)
         iteration_context.active_features = get_active_features(features_info_map)
-        orig_data, iteration_data, oa_is_optimal = get_batch(ALCS_configuration, orig_data, iteration_context, features_info_map)
+        orig_data, iteration_data, nearest_oa_name = get_batch(ALCS_configuration, orig_data, iteration_context, features_info_map)
+        iteration_context.new_gate_features = []
+
         num_of_instances = len(iteration_data)
         iteration_data_input_len = len(iteration_data.columns) - number_of_outputs
         active_feature_names = [active_feature.to_string() for active_feature in iteration_context.active_features]
@@ -566,32 +563,47 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                             tree_data.fit(iteration_data[data_input_col_names], iteration_data[outputs[output_index]])
                             tree_quality += tree_data.tree_.node_count
                             fitted_trees[outputs[output_index]] = tree_data
-                        if (tree_quality < best_quality) or ((tree_quality == best_quality) and
-                                                (is_better_combination(new_attribute_name, best_attribute_gates_map))):
+                        if tree_quality < best_quality:
                             best_quality = tree_quality
                             best_gate_feature = new_gate_feature
                             best_attribute_name = new_attribute_name
                             best_attribute_gates_map = get_gates_map(best_attribute_name)
                             best_trees_dump = fitted_trees
+                            best_features_list = [(best_gate_feature, best_trees_dump)]
+                        elif tree_quality == best_quality:
+                            best_features_list.append((new_gate_feature, fitted_trees))
+                            if is_better_combination(new_attribute_name, best_attribute_gates_map):
+                                best_gate_feature = new_gate_feature
+                                best_attribute_name = new_attribute_name
+                                best_attribute_gates_map = get_gates_map(best_attribute_name)
+                                best_trees_dump = fitted_trees
                         del iteration_data[new_attribute_name]
                         data_input_col_names.remove(new_attribute_name)
 
-        features_info_map[best_attribute_name] = init_feature_info(iteration_context.iteration_num, best_gate_feature, outputs)
-        insert_gate_as_att(orig_data, best_gate_feature, True)
-        iteration_context.new_gate_feature = best_gate_feature
+        selected_gates = [sel_gate[0].to_string() for sel_gate in best_features_list]
+        print("============ Selected Gates are: %s" % selected_gates)
+        for best_gate, best_tree_dump in best_features_list:  # insert all best features having same tree_quality
+            features_info_map[best_gate.to_string()] = init_feature_info(iteration_context.iteration_num, best_gate, outputs)
+            insert_gate_as_att(orig_data, best_gate, True)
+            iteration_context.new_gate_features.append(best_gate)
 
-        print("============ Selected Gate is: %s" % best_attribute_name)
-        iteration_context.active_features.append(best_gate_feature)  # for printing trees and exploration purposes
-        for output, tree in best_trees_dump.items():
-            print("\ntree for " + str(output))
-            print_tree_to_code(tree, iteration_context.active_features)
-            update_att_score(ALCS_configuration, features_info_map, output, tree, iteration_context.iteration_num)
-            if ALCS_configuration.use_explore_nodes:
-                iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
+            iteration_context.active_features.append(best_gate)  # for printing trees and exploration purposes, includes the best of all best list only
+            for output, tree in best_tree_dump.items():
+                update_att_score(ALCS_configuration, iteration_context.active_features, features_info_map, output,
+                                 tree, iteration_context.iteration_num)
+
+                # only the chosen gate updates the values to explore
+                if ALCS_configuration.use_explore_nodes and best_gate.to_string() == best_attribute_name:
+                    print("\ntree for " + str(output))
+                    print_tree_to_code(tree, iteration_context.active_features)
+                    iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
+            iteration_context.active_features.remove(best_gate)  # for printing trees and exploration purposes
         print("=============")
+
+        iteration_context.active_features.append(best_gate_feature)  #  for evaluating  metrics over one best feature only
         evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, iteration_context.iteration_num,
-                         num_of_instances, oa_is_optimal, best_quality, best_trees_dump, number_of_outputs)
-        iteration_context.active_features.remove(best_gate_feature)  # for printing trees and exploration purposes
+                         num_of_instances, nearest_oa_name, best_quality, best_trees_dump, number_of_outputs)
+        iteration_context.active_features.remove(best_gate_feature)  # for evaluating  metrics oven one best feature only
 
         end_time = int(round(time.time() * 1000))
         metrics_by_iteration[iteration_context.iteration_num]['iteration_time'] = (end_time - start_time) / 1000
@@ -604,7 +616,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     return metrics_by_iteration, iteration_context.iteration_num, experiment_fk
 
 
-def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced, num_of_insances, oa_is_optimal,
+def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced, num_of_insances, nearest_oa_name,
                      best_quality, best_trees_dump, number_of_outputs):
     sys_description = {'edges': -1,
                        'vertices': -1,
@@ -637,7 +649,8 @@ def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced
     metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
                                      'sys_description': sys_description,
                                      'test_set_error': test_set_error,
-                                     'oa_is_optimal': oa_is_optimal}
+                                     'oa_name': nearest_oa_name
+                                     }
 
 
 def generate_gates_map(trees_dump, active_features):
@@ -691,23 +704,32 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 if __name__ == '__main__':
     enable_write_experiments_to_DB = False
-    write_iterations_batch_size = 5
-    circuit_name = "c17"
+    write_iterations_batch_size = 3
+    circuit_name = "74182"
     # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 360, 427, 468, 468, 468, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485, 485]
-    # pre_def_list = [12, 23, 47, 60, 64, 116, 244, 372, 425, 450, 450, 450, 462, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487, 487]
-    pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+    # pre_def_list = [12, 22, 46, 60, 64, 116, 167, 218, 269, 320, 371, 422, 743, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
+    pre_def_list_74283 = [12, 21, 37, 48, 50, 94, 145, 196, 247, 298, 349, 400, 451, 502, 512, 512, 512, 512, 512, 512, 512,
+                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
+    # pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [TwoXor, TwoAnd, TwoOr]
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
-                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=30,
-                                    use_orthogonal_arrays=False, use_explore_nodes=False, randomize_remaining_data=False,
+                                    possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
+                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=len(get_input_names(orig_data)) * 3,
+                                    active_features_thresh=40, # len(get_input_names(orig_data)) * 2,
                                     min_prev_iteration_participation=5)
 
     print("Working on: " + ALCS_configuration.file_name)
