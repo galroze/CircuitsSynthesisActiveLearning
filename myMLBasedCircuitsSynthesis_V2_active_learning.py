@@ -21,7 +21,7 @@ orig_cached_data = []
 class ActiveLearningCircuitSynthesisConfiguration:
 
     def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
-                 use_orthogonal_arrays, use_explore_nodes, randomize_remaining_data, random_batch_size,
+                 use_orthogonal_arrays, oa_hold_iterations, use_explore_nodes, randomize_remaining_data, random_batch_size,
                  pre_defined_random_size_per_iteration, min_oa_strength, active_features_thresh,
                  min_prev_iteration_participation):
 
@@ -32,6 +32,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
         self.subset_max = subset_max
         self.max_num_of_iterations = max_num_of_iterations
         self.use_orthogonal_arrays = use_orthogonal_arrays
+        self.oa_hold_iterations = oa_hold_iterations
         self.use_explore_nodes = use_explore_nodes
         # when using OA and there are no more arrays to use, True for random, False for taking all remaining data
         self.randomize_remaining_data = randomize_remaining_data
@@ -300,17 +301,16 @@ def get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_in
     return batch_indices
 
 
-def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
+def get_batch(ALCS_conf, orig_data, iteration_context, oa_strength):
     nearest_oa_name = '-'
     # remove used indices from total orig data indices
     potential_data_indices = np.delete(orig_data.index.copy(deep=True), iteration_context.curr_instances_indices).tolist()
 
     if ALCS_conf.use_orthogonal_arrays:
-        next_strength = str(iteration_context.iteration_num - 1 + ALCS_conf.min_oa_strength)
-        if iteration_context.oa_by_strength_map.__contains__(next_strength):
+        if iteration_context.oa_by_strength_map.__contains__(oa_strength):
 
             active_features_for_oa = get_input_names(orig_data)
-            nearest_oa = get_nearest_oa(iteration_context.oa_by_strength_map[next_strength], len(active_features_for_oa))
+            nearest_oa = get_nearest_oa(iteration_context.oa_by_strength_map[oa_strength], len(active_features_for_oa))
             if nearest_oa is not None:
                 nearest_oa_name = nearest_oa.name
                 next_oa = trim_oa_to_fit_inputs(nearest_oa, len(active_features_for_oa))
@@ -322,14 +322,6 @@ def get_batch(ALCS_conf, orig_data, iteration_context, features_info_map):
             data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
     else:  # Random Batch
         data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
-
-    # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
-    for new_gate_feature in iteration_context.new_gate_features:
-        gate_feature = GateFeature(OneNot, [new_gate_feature])
-        insert_gate_as_att(orig_data, gate_feature, True)
-        features_info_map[gate_feature.to_string()] = init_feature_info(iteration_context.iteration_num - 1,
-                                                            gate_feature, get_output_names(orig_data))
-        iteration_context.active_features.append(gate_feature)
 
     # joining last iterations instances with current new batch instances
     iteration_context.curr_instances_indices = np.array(list(iteration_context.curr_instances_indices) + data_batch_indices)
@@ -484,6 +476,15 @@ def calculate_dist_metric(numerator, denominator):
             return 0
 
 
+def add_not_gate(orig_data, iteration_context, features_info_map):
+    # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
+    for new_gate_feature in iteration_context.new_gate_features:
+        gate_feature = GateFeature(OneNot, [new_gate_feature])
+        insert_gate_as_att(orig_data, gate_feature, True)
+        features_info_map[gate_feature.to_string()] = init_feature_info(iteration_context.iteration_num - 1,
+                                                                        gate_feature, get_output_names(orig_data))
+
+
 def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size,
              enable_write_experiments_to_DB, git_version, original_metrics):
     outputs = get_output_names(orig_data)
@@ -517,23 +518,31 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     iteration_context = IterationContext(1, np.array([]), get_active_features(features_info_map), oa_by_strength_map,
                                          [], values_to_explore_by_tree)
 
+    oa_strength = ALCS_configuration.min_oa_strength
     #############################################  -- STARTING ITERATIONS -- #########################################
     while iteration_context.iteration_num < ALCS_configuration.max_num_of_iterations:
         start_time = int(round(time.time() * 1000))
         best_quality = 10000
         best_attribute_name = ""
         best_attribute_gates_map = {}
+
+        add_not_gate(orig_data, iteration_context, features_info_map)
+        iteration_context.new_gate_features = []
+        # monte carlo
         update_features_activeness_for_iteration(features_info_map, ALCS_configuration.active_features_thresh)
         iteration_context.active_features = get_active_features(features_info_map)
-        orig_data, iteration_data, nearest_oa_name = get_batch(ALCS_configuration, orig_data, iteration_context, features_info_map)
-        iteration_context.new_gate_features = []
+        if (iteration_context.iteration_num > 1) and \
+                ((iteration_context.iteration_num - 1) % ALCS_configuration.oa_hold_iterations == 0):
+            oa_strength += 1
+        orig_data, iteration_data, nearest_oa_name = get_batch(ALCS_configuration, orig_data, iteration_context, str(oa_strength))
 
         num_of_instances = len(iteration_data)
         iteration_data_input_len = len(iteration_data.columns) - number_of_outputs
         active_feature_names = [active_feature.to_string() for active_feature in iteration_context.active_features]
         print("\n**** iteration #: " + str(iteration_context.iteration_num) + ", " + "# of instances: " + str(num_of_instances)
-              + ",\nActive features: " + str(active_feature_names)
-              + ",\nNon active features: " + str([feat_name for feat_name in get_input_names(orig_data) if feat_name not in active_feature_names])
+              + ",\n(" + str(len(active_feature_names)) + ") Active features: " + str(active_feature_names)
+              + ",\n(" + str(len(features_info_map) - len(active_feature_names)) +
+              ") Non active features: " + str([feat_name for feat_name in get_input_names(orig_data) if feat_name not in active_feature_names])
               + "****\n")
 
         # Now working on all other gates
@@ -581,7 +590,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                         data_input_col_names.remove(new_attribute_name)
 
         selected_gates = [sel_gate[0].to_string() for sel_gate in best_features_list]
-        print("============ Selected Gates are: %s" % selected_gates)
+        print("============ " + str(len(selected_gates)) + " Selected Gates are: %s" % selected_gates)
         for best_gate, best_tree_dump in best_features_list:  # insert all best features having same tree_quality
             features_info_map[best_gate.to_string()] = init_feature_info(iteration_context.iteration_num, best_gate, outputs)
             insert_gate_as_att(orig_data, best_gate, True)
@@ -725,11 +734,13 @@ if __name__ == '__main__':
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
-                                    use_orthogonal_arrays=True, use_explore_nodes=True, randomize_remaining_data=True,
+                                    use_orthogonal_arrays=True,
+                                    oa_hold_iterations=3,
+                                    use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=40, # len(get_input_names(orig_data)) * 2,
+                                    active_features_thresh=120, # len(get_input_names(orig_data)) * 2,
                                     min_prev_iteration_participation=5)
 
     print("Working on: " + ALCS_configuration.file_name)
