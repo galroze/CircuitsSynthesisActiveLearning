@@ -51,7 +51,7 @@ def insert_gate_as_att(data, gate_feature, use_cache):
     global orig_cached_data
     new_attribute_name = gate_feature.to_string()
     if use_cache:
-        new_column = get_transformed_att_value_cache_enabled(orig_cached_data, gate_feature, data, True)
+        new_column = get_transformed_att_value_cache_enabled(None, orig_cached_data, gate_feature, data, True)
     else:
         new_column = get_transformed_att_value(data, gate_feature.inputs, gate_feature.gate)
     data.insert(len(data.columns) - len(get_output_names(data)), new_attribute_name, new_column)
@@ -365,7 +365,7 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append(ALCS_configuration.__str__())
                 lines_to_write.append("\n\n* Iterations:\n")
                 lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\ttest_set_error\toa_name"
-                                      "\tedges"
+                                      "\tnumber_of_selected_gates\tedges"
                                       "\tedges_dist\tvertices\tvertices_dist\tcomponent_distribution_and"
                                       "\tcomponent_distribution_and_dist"
                                       "\tcomponent_distribution_or\tcomponent_distribution_or_dist"
@@ -381,6 +381,7 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append("\t" + str(metrics["test_set_error"]))
 
                 lines_to_write.append("\t" + str(metrics["oa_name"]))
+                lines_to_write.append("\t" + str(metrics["number_of_selected_gates"]))
 
                 lines_to_write.append("\t" + str(metrics["sys_description"]["edges"]))
                 edges_dist = calculate_dist_metric(original_metrics["edges"], metrics["sys_description"]["edges"])
@@ -519,6 +520,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                                          [], values_to_explore_by_tree)
 
     oa_strength = ALCS_configuration.min_oa_strength
+    feature_names_black_list = set()
     #############################################  -- STARTING ITERATIONS -- #########################################
     while iteration_context.iteration_num < ALCS_configuration.max_num_of_iterations:
         start_time = int(round(time.time() * 1000))
@@ -559,9 +561,16 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                 if possible_gate.numInputs == len(curr_arg_combination):
                     new_gate_feature = GateFeature(possible_gate, list(curr_arg_combination))
                     new_attribute_name = new_gate_feature.to_string()
-                    if not iteration_data.__contains__(new_attribute_name):
-                        new_column = get_transformed_att_value_cache_enabled(orig_cached_data, new_gate_feature,
-                                                                             iteration_data, True)
+                    if (not iteration_data.__contains__(new_attribute_name)) and \
+                            (not feature_names_black_list.__contains__(new_attribute_name)):
+
+                        new_column = get_transformed_att_value_cache_enabled(
+                            orig_data[[c for c in orig_data.columns if c not in outputs]],
+                            orig_cached_data, new_gate_feature, iteration_data, True)
+                        # column's truth table is identical to some other column already existing
+                        if new_column is None:
+                            feature_names_black_list.add(new_attribute_name)
+                            continue
                         iteration_data.insert(iteration_data_input_len, new_attribute_name, new_column)
                         data_input_col_names.append(new_attribute_name)
 
@@ -611,7 +620,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
 
         iteration_context.active_features.append(best_gate_feature)  #  for evaluating  metrics over one best feature only
         evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, iteration_context.iteration_num,
-                         num_of_instances, nearest_oa_name, best_quality, best_trees_dump, number_of_outputs)
+                         num_of_instances, nearest_oa_name, best_quality, best_trees_dump, number_of_outputs, len(selected_gates))
         iteration_context.active_features.remove(best_gate_feature)  # for evaluating  metrics oven one best feature only
 
         end_time = int(round(time.time() * 1000))
@@ -621,12 +630,12 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                                                           metrics_by_iteration, original_metrics,
                                                           write_iterations_batch_size, git_version)
         iteration_context.iteration_num += 1
-
+        print('black list: ' + str(len(feature_names_black_list)))
     return metrics_by_iteration, iteration_context.iteration_num, experiment_fk
 
 
 def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced, num_of_insances, nearest_oa_name,
-                     best_quality, best_trees_dump, number_of_outputs):
+                     best_quality, best_trees_dump, number_of_outputs, number_of_selected_gates):
     sys_description = {'edges': -1,
                        'vertices': -1,
                        'comp_distribution_map': {
@@ -658,7 +667,8 @@ def evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, induced
     metrics_by_iteration[induced] = {'num_of_instances': num_of_insances,
                                      'sys_description': sys_description,
                                      'test_set_error': test_set_error,
-                                     'oa_name': nearest_oa_name
+                                     'oa_name': nearest_oa_name,
+                                     'number_of_selected_gates': number_of_selected_gates
                                      }
 
 
@@ -713,8 +723,8 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 
 if __name__ == '__main__':
     enable_write_experiments_to_DB = False
-    write_iterations_batch_size = 3
-    circuit_name = "74182"
+    write_iterations_batch_size = 1
+    circuit_name = "c17"
     # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
     # pre_def_list = [12, 22, 46, 60, 64, 116, 167, 218, 269, 320, 371, 422, 743, 512, 512, 512, 512, 512, 512, 512, 512,
     #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
@@ -735,12 +745,12 @@ if __name__ == '__main__':
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
                                     use_orthogonal_arrays=True,
-                                    oa_hold_iterations=3,
+                                    oa_hold_iterations=2,
                                     use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=120, # len(get_input_names(orig_data)) * 2,
+                                    active_features_thresh=60, # len(get_input_names(orig_data)) * 2,
                                     min_prev_iteration_participation=5)
 
     print("Working on: " + ALCS_configuration.file_name)

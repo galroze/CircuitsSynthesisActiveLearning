@@ -51,17 +51,28 @@ def get_transformed_att_value(data, att_names, gate):
     return transformed_column
 
 
-def get_transformed_att_value_cache_enabled(orig_cached_full_data, new_gate_feature, data, generate_not_gate_for_cache):
+def is_transformed_column_exist(data_inputs, column):
+    if data_inputs is not None:
+        col_series = pandas.Series(column)
+        values = data_inputs.values
+        col = col_series.values.reshape(len(col_series), 1)
+        eq_df = (values == col).all(axis=0)
+        return len(np.where(eq_df == True)[0]) > 0
+    return False
+
+
+def get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data, new_gate_feature, data, generate_not_gate_for_cache):
     new_attribute_name = new_gate_feature.to_string()
-    if orig_cached_full_data.__contains__(new_attribute_name):
-        transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
-    else:
+    if not orig_cached_full_data.__contains__(new_attribute_name):
         transformed_column = get_transformed_att_value(orig_cached_full_data, new_gate_feature.inputs, new_gate_feature.gate)
-        orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
-        # for caching not gate
-        if generate_not_gate_for_cache:
-            get_transformed_att_value_cache_enabled(orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data, False)
-        transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
+        if is_transformed_column_exist(orig_data_inputs, transformed_column):
+            return None
+        else:
+            orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
+            # for caching not gate
+            if generate_not_gate_for_cache:
+                get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data, False)
+    transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
     return transformed_column
 
 
