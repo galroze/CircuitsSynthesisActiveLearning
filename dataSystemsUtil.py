@@ -183,16 +183,7 @@ def generate_truth_table(circuit_name):
 
     inputs = get_inputs_list(lines)
 
-    truth_table_columns = inputs.copy()
-    truth_table = pandas.DataFrame(columns=truth_table_columns, dtype=bool)
-
-    rows = math.pow(2, len(inputs))
-
-    for i in range(int(rows)):
-        new_row = []
-        for j in range(len(inputs) - 1, -1, -1):
-            new_row.append(False if (int(i / math.pow(2, j)) % 2) == 0 else True)
-        truth_table = truth_table.append(pandas.Series(new_row, index=truth_table.columns), ignore_index=True)
+    truth_table = generate_truth_table_inputs(inputs)
 
     for row_index in range(3, len(lines)):
         gate, row_inputs, row_output = parse_data_system_row(lines, row_index, logic_types)
@@ -202,6 +193,18 @@ def generate_truth_table(circuit_name):
     truth_table = truth_table[truth_table.columns[pandas.Series(truth_table.columns).str.startswith('z') == False]]
     truth_table.to_csv(TRUTH_TABLE_PATH + circuit_name + ".tab", sep='\t', index=False)
     print("Done generating: " + str(TRUTH_TABLE_PATH + circuit_name + ".tab") + " \ninputs: " + str(get_input_names(truth_table)) + " outputs: " + str(get_output_names(truth_table)))
+
+
+def generate_truth_table_inputs(inputs):
+    truth_table_columns = inputs.copy()
+    truth_table = pandas.DataFrame(columns=truth_table_columns, dtype=bool)
+    rows = math.pow(2, len(inputs))
+    for i in range(int(rows)):
+        new_row = []
+        for j in range(len(inputs) - 1, -1, -1):
+            new_row.append(False if (int(i / math.pow(2, j)) % 2) == 0 else True)
+        truth_table = truth_table.append(pandas.Series(new_row, index=truth_table.columns), ignore_index=True)
+    return truth_table
 
 
 def write_metrics_to_csv(circuit_name, metric_dict):
@@ -263,11 +266,21 @@ def read_original_metrics(circuit_name):
     return original_metrics
 
 
-if __name__ == '__main__':
-    circuit_name = '74181'
-    # generate_truth_table(circuit_name)
+def generte_mux_truth_table_from_function(inputs):
+    truth_table = generate_truth_table_inputs(inputs)
+    output_column = get_transformed_att_value(truth_table, inputs, SixMux)
+    truth_table.insert(len(truth_table.columns), 'o1', output_column)
+    truth_table.to_csv(TRUTH_TABLE_PATH + "mux.tab", sep='\t', index=False)
+    print("Done generating mux truth table")
 
-    expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
-    write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
+
+if __name__ == '__main__':
+    generte_mux_truth_table_from_function(['i1', 'i2', 'i3', 'i4', 'i5', 'i6'])
+
+    # circuit_name = '74181'
+    # # generate_truth_table(circuit_name)
+    #
+    # expected_gates_map, outputs_list = generate_expected_gates_map(circuit_name)
+    # write_metrics_to_csv(circuit_name, create_system_description(expected_gates_map, len(outputs_list)))
 
 

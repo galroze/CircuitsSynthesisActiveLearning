@@ -264,3 +264,15 @@ class Buffer:
     @staticmethod
     def f(value1):
         return value1
+
+
+class SixMux:
+    name = "mux6"
+    numInputs = 6
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5, value6):
+        return FourOr.f(ThreeAnd.f(OneNot.f(value1), OneNot.f(value2), value3), ThreeAnd.f(value1, OneNot.f(value2), value4),
+                        ThreeAnd.f(OneNot.f(value1), value2, value5), ThreeAnd.f(value1, value2, value6))
