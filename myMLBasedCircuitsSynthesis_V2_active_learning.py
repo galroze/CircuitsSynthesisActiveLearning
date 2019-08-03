@@ -47,14 +47,21 @@ class ActiveLearningCircuitSynthesisConfiguration:
         return '\n'.join('%s=%s' % item for item in vars(self).items())
 
 
-def insert_gate_as_att(data, gate_feature, use_cache):
+def insert_gate_as_att(data, gate_feature, use_cache, cache_counter):
     global orig_cached_data
     new_attribute_name = gate_feature.to_string()
     if use_cache:
-        new_column = get_transformed_att_value_cache_enabled(None, orig_cached_data, gate_feature, data, True)
+        outputs = get_output_names(orig_data)
+        new_column, cache_counter = get_transformed_att_value_cache_enabled(data[[c for c in data.columns if c not in outputs]]
+                                                             , orig_cached_data, gate_feature, data, True, cache_counter)
     else:
         new_column = get_transformed_att_value(data, gate_feature.inputs, gate_feature.gate)
-    data.insert(len(data.columns) - len(get_output_names(data)), new_attribute_name, new_column)
+
+    if new_column is not None:
+        data.insert(len(data.columns) - len(get_output_names(data)), new_attribute_name, new_column)
+        return True, cache_counter
+    else:
+        return False, cache_counter
 
 
 def print_tree_to_code(tree, curr_gate_features):
@@ -86,6 +93,20 @@ def get_tree_feature_names(gate_features, tree):
         for i in tree_.feature
     ]
     return feature_name
+
+
+def get_tree_feature_names_by_feature_str(tree, gate_features_str):
+    tree_ = tree.tree_
+    feature_names = [
+        gate_features_str[i] if i != _tree.TREE_UNDEFINED else "undefined!"
+        for i in tree_.feature
+    ]
+    return feature_names
+
+
+def is_feature_in_tree(feature_name, tree, gate_features_str):
+    feature_names = get_tree_feature_names_by_feature_str(tree, gate_features_str)
+    return feature_name in feature_names
 
 
 def get_tree_features(active_features, tree):
@@ -364,7 +385,7 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append("\n\n* configuration:\n")
                 lines_to_write.append(ALCS_configuration.__str__())
                 lines_to_write.append("\n\n* Iterations:\n")
-                lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\ttest_set_error\toa_name"
+                lines_to_write.append("\niteration_number\titeration_time\tnum_of_instances\taccuracy(%)\toa_name"
                                       "\tnumber_of_selected_gates\tedges"
                                       "\tedges_dist\tvertices\tvertices_dist\tcomponent_distribution_and"
                                       "\tcomponent_distribution_and_dist"
@@ -378,7 +399,7 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
                 lines_to_write.append(str(iteration))
                 lines_to_write.append("\t" + str(metrics["iteration_time"]))
                 lines_to_write.append("\t" + str(metrics["num_of_instances"]))
-                lines_to_write.append("\t" + str(metrics["test_set_error"]))
+                lines_to_write.append("\t" + str((1-metrics["test_set_error"])*100 if metrics["test_set_error"] != -1 else -1))
 
                 lines_to_write.append("\t" + str(metrics["oa_name"]))
                 lines_to_write.append("\t" + str(metrics["number_of_selected_gates"]))
@@ -477,17 +498,21 @@ def calculate_dist_metric(numerator, denominator):
             return 0
 
 
-def add_not_gate(orig_data, iteration_context, features_info_map):
+def add_not_gate(orig_data, iteration_context, features_info_map, cache_counter):
     # ADD NOT GATE !AT THE END! FOR NEW ADDED ARG FROM LAST ITERATION
     for new_gate_feature in iteration_context.new_gate_features:
         gate_feature = GateFeature(OneNot, [new_gate_feature])
-        insert_gate_as_att(orig_data, gate_feature, True)
-        features_info_map[gate_feature.to_string()] = init_feature_info(iteration_context.iteration_num - 1,
+        added, cache_counter = insert_gate_as_att(orig_data, gate_feature, True, cache_counter)
+        if added:
+            features_info_map[gate_feature.to_string()] = init_feature_info(iteration_context.iteration_num - 1,
                                                                         gate_feature, get_output_names(orig_data))
+    return cache_counter
 
 
 def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations_batch_size,
              enable_write_experiments_to_DB, git_version, original_metrics):
+
+    cache_counter = 0
     outputs = get_output_names(orig_data)
     number_of_outputs = len(outputs)
 
@@ -507,8 +532,9 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
     not_gate_arguments = itertools.combinations(gate_features_inputs, 1)
     for not_gate_argument_tuple in not_gate_arguments:
         gate_feature = GateFeature(OneNot, [not_gate_argument_tuple[0]])
-        insert_gate_as_att(orig_data, gate_feature, False)
-        gate_features_inputs.append(gate_feature)
+        added, cache_counter = insert_gate_as_att(orig_data, gate_feature, False, cache_counter)
+        if added:
+            gate_features_inputs.append(gate_feature)
 
     global orig_cached_data
     orig_cached_data = orig_data.copy()
@@ -528,7 +554,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         best_attribute_name = ""
         best_attribute_gates_map = {}
 
-        add_not_gate(orig_data, iteration_context, features_info_map)
+        cache_counter = add_not_gate(orig_data, iteration_context, features_info_map, cache_counter)
         iteration_context.new_gate_features = []
         # monte carlo
         update_features_activeness_for_iteration(features_info_map, ALCS_configuration.active_features_thresh)
@@ -564,9 +590,9 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                     if (not iteration_data.__contains__(new_attribute_name)) and \
                             (not feature_names_black_list.__contains__(new_attribute_name)):
 
-                        new_column = get_transformed_att_value_cache_enabled(
+                        new_column, cache_counter = get_transformed_att_value_cache_enabled(
                             orig_data[[c for c in orig_data.columns if c not in outputs]],
-                            orig_cached_data, new_gate_feature, iteration_data, True)
+                            orig_cached_data, new_gate_feature, iteration_data, False, cache_counter)
                         # column's truth table is identical to some other column already existing
                         if new_column is None:
                             feature_names_black_list.add(new_attribute_name)
@@ -576,11 +602,14 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
 
                         tree_quality = 0
                         fitted_trees = {}
+                        is_new_attribute_participated = False
                         for output_index in range(len(outputs)):
                             tree_data = DecisionTreeClassifier(random_state=0, criterion="entropy")
                             tree_data.fit(iteration_data[data_input_col_names], iteration_data[outputs[output_index]])
                             tree_quality += tree_data.tree_.node_count
                             fitted_trees[outputs[output_index]] = tree_data
+                            if not is_new_attribute_participated:
+                                is_new_attribute_participated = is_feature_in_tree(new_attribute_name, tree_data, data_input_col_names)
                         if tree_quality < best_quality:
                             best_quality = tree_quality
                             best_gate_feature = new_gate_feature
@@ -588,8 +617,9 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                             best_attribute_gates_map = get_gates_map(best_attribute_name)
                             best_trees_dump = fitted_trees
                             best_features_list = [(best_gate_feature, best_trees_dump)]
-                        elif tree_quality == best_quality:
+                        elif is_new_attribute_participated and (tree_quality == best_quality):
                             best_features_list.append((new_gate_feature, fitted_trees))
+                            # could cause an issue if this new best one is later deleted bacause it is not the first one of the duplicates
                             if is_better_combination(new_attribute_name, best_attribute_gates_map):
                                 best_gate_feature = new_gate_feature
                                 best_attribute_name = new_attribute_name
@@ -601,27 +631,33 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
         selected_gates = [sel_gate[0].to_string() for sel_gate in best_features_list]
         print("============ " + str(len(selected_gates)) + " Selected Gates are: %s" % selected_gates)
         for best_gate, best_tree_dump in best_features_list:  # insert all best features having same tree_quality
-            features_info_map[best_gate.to_string()] = init_feature_info(iteration_context.iteration_num, best_gate, outputs)
-            insert_gate_as_att(orig_data, best_gate, True)
-            iteration_context.new_gate_features.append(best_gate)
+            added, cache_counter = insert_gate_as_att(orig_data, best_gate, True, cache_counter)
+            if added:
+                features_info_map[best_gate.to_string()] = init_feature_info(iteration_context.iteration_num, best_gate, outputs)
+                iteration_context.new_gate_features.append(best_gate)
 
-            iteration_context.active_features.append(best_gate)  # for printing trees and exploration purposes, includes the best of all best list only
-            for output, tree in best_tree_dump.items():
-                update_att_score(ALCS_configuration, iteration_context.active_features, features_info_map, output,
-                                 tree, iteration_context.iteration_num)
+                iteration_context.active_features.append(best_gate)  # for printing trees and exploration purposes, includes the best of all best list only
+                for output, tree in best_tree_dump.items():
+                    update_att_score(ALCS_configuration, iteration_context.active_features, features_info_map, output,
+                                     tree, iteration_context.iteration_num)
 
-                # only the chosen gate updates the values to explore
-                if ALCS_configuration.use_explore_nodes and best_gate.to_string() == best_attribute_name:
-                    print("\ntree for " + str(output))
-                    print_tree_to_code(tree, iteration_context.active_features)
-                    iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
-            iteration_context.active_features.remove(best_gate)  # for printing trees and exploration purposes
-        print("=============")
+                    # only the chosen gate updates the values to explore
+                    if ALCS_configuration.use_explore_nodes and best_gate.to_string() == best_attribute_name:
+                        print("\ntree for " + str(output))
+                        print_tree_to_code(tree, iteration_context.active_features)
+                        iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
+                iteration_context.active_features.remove(best_gate)  # for printing trees and exploration purposes
+            else:
+                # feature was not added due to it's truth table column already exist with some other feature, add it to the black list
+                selected_gates.remove(best_gate.to_string())
+                print('mish********************')
+                feature_names_black_list.add(best_gate.to_string())
+        print("============ " + str(len(selected_gates)) + " Remaining Selected Gates")
 
         iteration_context.active_features.append(best_gate_feature)  #  for evaluating  metrics over one best feature only
         evaluate_metrics(iteration_context, metrics_by_iteration, orig_data, iteration_context.iteration_num,
                          num_of_instances, nearest_oa_name, best_quality, best_trees_dump, number_of_outputs, len(selected_gates))
-        iteration_context.active_features.remove(best_gate_feature)  # for evaluating  metrics oven one best feature only
+        iteration_context.active_features.remove(best_gate_feature)  # for evaluating  metrics over one best feature only
 
         end_time = int(round(time.time() * 1000))
         metrics_by_iteration[iteration_context.iteration_num]['iteration_time'] = (end_time - start_time) / 1000
@@ -631,6 +667,8 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                                                           write_iterations_batch_size, git_version)
         iteration_context.iteration_num += 1
         print('black list: ' + str(len(feature_names_black_list)))
+        print('orig_cached_data.shape: ' + str(orig_cached_data.shape))
+        print('cache_counter: ' + str(cache_counter))
     return metrics_by_iteration, iteration_context.iteration_num, experiment_fk
 
 
@@ -724,20 +762,20 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 if __name__ == '__main__':
     enable_write_experiments_to_DB = False
     write_iterations_batch_size = 1
-    circuit_name = "c17"
+    circuit_name = "mux"
     # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
     # pre_def_list = [12, 22, 46, 60, 64, 116, 167, 218, 269, 320, 371, 422, 743, 512, 512, 512, 512, 512, 512, 512, 512,
     #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
     #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
     #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
     #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    pre_def_list_74283 = [12, 21, 37, 48, 50, 94, 145, 196, 247, 298, 349, 400, 451, 502, 512, 512, 512, 512, 512, 512, 512,
-                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-                        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    # pre_def_list = [8,12,18,25,25,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+    # pre_def_list_74283 = [12, 21, 37, 48, 50, 94, 145, 196, 247, 298, 349, 400, 451, 502, 512, 512, 512, 512, 512, 512, 512,
+    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
+    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
+    pre_def_list_c17 = [8,8,8,20,20,20,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [TwoXor, TwoAnd, TwoOr]
 
@@ -745,12 +783,12 @@ if __name__ == '__main__':
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
                                     use_orthogonal_arrays=True,
-                                    oa_hold_iterations=2,
+                                    oa_hold_iterations=4,
                                     use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=60, # len(get_input_names(orig_data)) * 2,
+                                    active_features_thresh=150, # len(get_input_names(orig_data)) * 2,
                                     min_prev_iteration_participation=5)
 
     print("Working on: " + ALCS_configuration.file_name)

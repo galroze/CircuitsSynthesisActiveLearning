@@ -61,19 +61,22 @@ def is_transformed_column_exist(data_inputs, column):
     return False
 
 
-def get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data, new_gate_feature, data, generate_not_gate_for_cache):
+def get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data, new_gate_feature, data, generate_not_gate_for_cache, cache_counter):
     new_attribute_name = new_gate_feature.to_string()
     if not orig_cached_full_data.__contains__(new_attribute_name):
         transformed_column = get_transformed_att_value(orig_cached_full_data, new_gate_feature.inputs, new_gate_feature.gate)
         if is_transformed_column_exist(orig_data_inputs, transformed_column):
-            return None
+            return None, cache_counter
         else:
             orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
             # for caching not gate
             if generate_not_gate_for_cache:
-                get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data, GateFeature(OneNot, [new_gate_feature]), data, False)
+                _, cache_counter = get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data,
+                                            GateFeature(OneNot, [new_gate_feature]), data, False, cache_counter)
+    else:
+        cache_counter += 1
     transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]
-    return transformed_column
+    return transformed_column, cache_counter
 
 
 def get_input_names(data):
