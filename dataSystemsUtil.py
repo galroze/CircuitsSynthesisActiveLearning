@@ -266,16 +266,16 @@ def read_original_metrics(circuit_name):
     return original_metrics
 
 
-def generte_mux_truth_table_from_function(inputs):
+def generte_truth_table_from_function(circuit, inputs):
     truth_table = generate_truth_table_inputs(inputs)
-    output_column = get_transformed_att_value(truth_table, inputs, SixMux)
+    output_column = get_transformed_att_value(truth_table, inputs, circuit)
     truth_table.insert(len(truth_table.columns), 'o1', output_column)
-    truth_table.to_csv(TRUTH_TABLE_PATH + "mux.tab", sep='\t', index=False)
-    print("Done generating mux truth table")
+    truth_table.to_csv(TRUTH_TABLE_PATH + circuit.name + ".tab", sep='\t', index=False)
+    print("Done generating " + circuit.name + " truth table")
 
 
 if __name__ == '__main__':
-    generte_mux_truth_table_from_function(['i1', 'i2', 'i3', 'i4', 'i5', 'i6'])
+    generte_truth_table_from_function(mux3, ['i1', 'i2', 'i3', 'i4', 'i5'])
 
     # circuit_name = '74181'
     # # generate_truth_table(circuit_name)

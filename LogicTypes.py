@@ -276,3 +276,15 @@ class SixMux:
     def f(value1, value2, value3, value4, value5, value6):
         return FourOr.f(ThreeAnd.f(OneNot.f(value1), OneNot.f(value2), value3), ThreeAnd.f(value1, OneNot.f(value2), value4),
                         ThreeAnd.f(OneNot.f(value1), value2, value5), ThreeAnd.f(value1, value2, value6))
+
+class mux3:
+    name = "mux3"
+    numInputs = 5
+    numOutputs = 1
+    cost = 1
+
+    @staticmethod
+    def f(value1, value2, value3, value4, value5):
+        return ThreeOr.f(ThreeAnd.f(value1, OneNot.f(value4), OneNot.f(value5)),
+                       ThreeAnd.f(value2, OneNot.f(value4), value5),
+                       ThreeAnd.f(value3, value4, OneNot.f(value5)))
