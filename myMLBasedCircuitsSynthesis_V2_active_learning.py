@@ -22,7 +22,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
 
     def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
                  use_orthogonal_arrays, oa_hold_iterations, use_explore_nodes, randomize_remaining_data, random_batch_size,
-                 pre_defined_random_size_per_iteration, min_oa_strength, active_features_thresh,
+                 pre_defined_random_size_per_iteration, min_oa_strength, active_features_thresh, max_selected_gates_per_iteration,
                  min_prev_iteration_participation):
 
         self.file_name = file_name
@@ -40,6 +40,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
         self.pre_defined_random_size_per_iteration = pre_defined_random_size_per_iteration
         self.min_oa_strength = min_oa_strength
         self.active_features_thresh = active_features_thresh
+        self.max_selected_gates_per_iteration = max_selected_gates_per_iteration
         self.min_prev_iteration_participation = min_prev_iteration_participation
 
 
@@ -627,7 +628,8 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                                 best_trees_dump = fitted_trees
                         del iteration_data[new_attribute_name]
                         data_input_col_names.remove(new_attribute_name)
-
+        if len(best_features_list) > ALCS_configuration.max_selected_gates_per_iteration:
+            best_features_list = best_features_list[:ALCS_configuration.max_selected_gates_per_iteration]
         selected_gates = [sel_gate[0].to_string() for sel_gate in best_features_list]
         print("============ " + str(len(selected_gates)) + " Selected Gates are: %s" % selected_gates)
         for best_gate, best_tree_dump in best_features_list:  # insert all best features having same tree_quality
@@ -788,7 +790,8 @@ if __name__ == '__main__':
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=150, # len(get_input_names(orig_data)) * 2,
+                                    active_features_thresh=500, # len(get_input_names(orig_data)) * 2,
+                                    max_selected_gates_per_iteration=300, #2147483647
                                     min_prev_iteration_participation=5)
 
     print("Working on: " + ALCS_configuration.file_name)
