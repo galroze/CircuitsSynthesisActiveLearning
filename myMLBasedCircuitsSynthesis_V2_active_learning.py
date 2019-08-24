@@ -23,7 +23,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
     def __init__(self, file_name, total_num_of_instances, possible_gates, subset_min, subset_max, max_num_of_iterations,
                  use_orthogonal_arrays, oa_hold_iterations, use_explore_nodes, randomize_remaining_data, random_batch_size,
                  pre_defined_random_size_per_iteration, min_oa_strength, active_features_thresh, max_selected_gates_per_iteration,
-                 min_prev_iteration_participation):
+                 min_prev_iteration_participation, random_seed):
 
         self.file_name = file_name
         self.total_num_of_instances = total_num_of_instances
@@ -42,6 +42,7 @@ class ActiveLearningCircuitSynthesisConfiguration:
         self.active_features_thresh = active_features_thresh
         self.max_selected_gates_per_iteration = max_selected_gates_per_iteration
         self.min_prev_iteration_participation = min_prev_iteration_participation
+        self.random_seed = random_seed
 
 
     def __str__(self):
@@ -148,19 +149,37 @@ def get_gates_map(attribute_name):
     return gates_map
 
 
+def get_batch_using_pre_defined_size(data, ALCS_conf, iteration_context):
+    if len(ALCS_conf.pre_defined_random_size_per_iteration) > 0:
+        if iteration_context.iteration_num == 1:
+            batch_size = ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 1]
+        else:
+            batch_size = ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 1] - \
+                         ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 2]
+
+        random.seed(ALCS_conf.random_seed)
+        return random.sample(list(data.index), batch_size)
+    return list(data.index)
+
+
 def get_batch_using_explorable_nodes(data, values_to_explore_by_tree):
     if len(values_to_explore_by_tree) > 0:
         batch_indices = []
+        no_explorable_values = True
         for tree_values in values_to_explore_by_tree.values():
-            # dropping former tree batch that is already included in the returned batch
-            potential_batch = data.drop(batch_indices)
-            for gate_feature, value in tree_values:
-                if len(potential_batch) > 0:
-                    value = True if value == 1 else False
-                    potential_batch = potential_batch[potential_batch[gate_feature.to_string()] == value]
-                else:
-                    break
-            batch_indices.extend(potential_batch.index)
+            if len(tree_values) > 0:
+                no_explorable_values = False # at least this tree has values, therefore filter instances by them
+                # dropping former tree batch that is already included in the returned batch
+                potential_batch = data.drop(batch_indices)
+                for gate_feature, value in tree_values:
+                    if len(potential_batch) > 0:
+                        value = True if value == 1 else False
+                        potential_batch = potential_batch[potential_batch[gate_feature.to_string()] == value]
+                    else:
+                        break
+                batch_indices.extend(potential_batch.index)
+        if no_explorable_values: # there were no explorable values for any of the trees, return all potential batch
+            return list(data.index)
         return list(set(batch_indices))
     else:
         return list(data.index)
@@ -317,7 +336,7 @@ def get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_in
             batch_size = len(potential_data_indices)
 
         if batch_size > 0:
-            random.seed(2018)
+            random.seed(ALCS_conf.random_seed)# seed
             sample_size = min(len(potential_data_indices), batch_size)
             batch_indices = random.sample(potential_data_indices, sample_size)
     return batch_indices
@@ -337,7 +356,11 @@ def get_batch(ALCS_conf, orig_data, iteration_context, oa_strength):
                 nearest_oa_name = nearest_oa.name
                 next_oa = trim_oa_to_fit_inputs(nearest_oa, len(active_features_for_oa))
                 data_batch = get_batch_using_oa(orig_data, potential_data_indices, active_features_for_oa, next_oa.array)
-                data_batch_indices = get_batch_using_explorable_nodes(data_batch, iteration_context.values_to_explore_by_tree)
+                if ALCS_conf.use_explore_nodes:
+                    data_batch_indices = get_batch_using_explorable_nodes(data_batch, iteration_context.values_to_explore_by_tree)
+                else:
+                    # using OA, but randomizing batch selection to fit pre defined size(using OA but not explorable nodes)
+                    data_batch_indices = get_batch_using_pre_defined_size(data_batch, ALCS_conf, iteration_context)
             else:  # no OA found(probably not enough attributes in current strength)
                 data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
         else:  # no more OA strengths
@@ -361,7 +384,7 @@ def get_model_error(best_trees_dump, data, active_features):
             if instance[output] != pred_y[row_index]:
                 error += 1
             row_index += 1
-    return error/len(data)
+    return error/(len(data)*len(best_trees_dump))
 
 
 def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, experiment_fk, metrics_by_iteration,
@@ -381,7 +404,7 @@ def write_batch(enable_write_experiments_to_DB, ALCS_configuration, induced, exp
             # first batch
             lines_to_write = []
             if first_batch(induced, write_iterations_batch_size):
-                lines_to_write.append("* created: " + str(datetime.datetime.now()))
+                lines_to_write.append("\n\n* created: " + str(datetime.datetime.now()))
                 lines_to_write.append("\n* git version: " + git_version)
                 lines_to_write.append("\n\n* configuration:\n")
                 lines_to_write.append(ALCS_configuration.__str__())
@@ -644,7 +667,7 @@ def run_ALCS(ALCS_configuration, orig_data, oa_by_strength_map, write_iterations
                                      tree, iteration_context.iteration_num)
 
                     # only the chosen gate updates the values to explore
-                    if ALCS_configuration.use_explore_nodes and best_gate.to_string() == best_attribute_name:
+                    if best_gate.to_string() == best_attribute_name:
                         print("\ntree for " + str(output))
                         print_tree_to_code(tree, iteration_context.active_features)
                         iteration_context.values_to_explore_by_tree[output] = get_curr_values_to_explore(tree, iteration_context.active_features)
@@ -790,9 +813,10 @@ if __name__ == '__main__':
                                     random_batch_size=int(round(len(orig_data)*0.1)),
                                     pre_defined_random_size_per_iteration=[],
                                     min_oa_strength=2,
-                                    active_features_thresh=500, # len(get_input_names(orig_data)) * 2,
-                                    max_selected_gates_per_iteration=300, #2147483647
-                                    min_prev_iteration_participation=5)
+                                    active_features_thresh=200, # len(get_input_names(orig_data)) * 2,
+                                    max_selected_gates_per_iteration=200, #2147483647,
+                                    min_prev_iteration_participation=5,
+                                    random_seed=787)
 
     print("Working on: " + ALCS_configuration.file_name)
 
