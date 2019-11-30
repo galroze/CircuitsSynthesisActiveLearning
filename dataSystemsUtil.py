@@ -266,16 +266,26 @@ def read_original_metrics(circuit_name):
     return original_metrics
 
 
-def generte_truth_table_from_function(circuit, inputs):
+def generte_truth_table_from_function(name, outputs_map, inputs):
     truth_table = generate_truth_table_inputs(inputs)
-    output_column = get_transformed_att_value(truth_table, inputs, circuit)
-    truth_table.insert(len(truth_table.columns), 'o1', output_column)
-    truth_table.to_csv(TRUTH_TABLE_PATH + circuit.name + ".tab", sep='\t', index=False)
-    print("Done generating " + circuit.name + " truth table")
+    for output, circuit in outputs_map.items():
+        output_column = get_transformed_att_value(truth_table, inputs, circuit)
+        truth_table.insert(len(truth_table.columns), output, output_column)
+    truth_table.to_csv(TRUTH_TABLE_PATH + name + ".tab", sep='\t', index=False)
+    print("Done generating " + name + " truth table")
 
 
 if __name__ == '__main__':
-    generte_truth_table_from_function(mux3, ['i1', 'i2', 'i3', 'i4', 'i5'])
+    generte_truth_table_from_function('multi_operand_adder5', {
+        'o1': multi_operand_adder5_o1
+        ,
+        'o2': multi_operand_adder5_o2,
+        'o3': multi_operand_adder5_o3
+        # ,
+        # 'o4': multi_operand_adder5_o4,
+        # 'o5': multi_operand_adder5_o5,
+        # 'o6': comp3_o6
+    }, ['i1', 'i2', 'i3', 'i4', 'i5'])
 
     # circuit_name = '74181'
     # # generate_truth_table(circuit_name)

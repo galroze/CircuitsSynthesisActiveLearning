@@ -68,11 +68,12 @@ def get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_d
         if is_transformed_column_exist(orig_data_inputs, transformed_column):
             return None, cache_counter
         else:
-            orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
-            # for caching not gate
-            if generate_not_gate_for_cache:
-                _, cache_counter = get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data,
-                                            GateFeature(OneNot, [new_gate_feature]), data, False, cache_counter)
+            if len(orig_cached_full_data.columns) < 400000:
+                orig_cached_full_data.insert(len(orig_cached_full_data.columns), new_attribute_name, transformed_column)
+                # for caching not gate
+                if generate_not_gate_for_cache:
+                    _, cache_counter = get_transformed_att_value_cache_enabled(orig_data_inputs, orig_cached_full_data,
+                                                GateFeature(OneNot, [new_gate_feature]), data, False, cache_counter)
     else:
         cache_counter += 1
     transformed_column = orig_cached_full_data.iloc[data.index.values][new_attribute_name]

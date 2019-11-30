@@ -150,7 +150,7 @@ def get_gates_map(attribute_name):
 
 
 def get_batch_using_pre_defined_size(data, ALCS_conf, iteration_context):
-    if len(ALCS_conf.pre_defined_random_size_per_iteration) > 0:
+    if (len(ALCS_conf.pre_defined_random_size_per_iteration) > 0 and len(data) > 0):
         if iteration_context.iteration_num == 1:
             batch_size = ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 1]
         else:
@@ -787,31 +787,30 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 if __name__ == '__main__':
     enable_write_experiments_to_DB = False
     write_iterations_batch_size = 1
-    circuit_name = "mux"
-    # pre_def_list = [12, 20, 37, 57, 58, 106, 234, 362, 466, 466, 502, 508, 508, 508, 508, 508, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    # pre_def_list = [12, 22, 46, 60, 64, 116, 167, 218, 269, 320, 371, 422, 743, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    # pre_def_list_74283 = [12, 21, 37, 48, 50, 94, 145, 196, 247, 298, 349, 400, 451, 502, 512, 512, 512, 512, 512, 512, 512,
-    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512,
-    #                     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512]
-    pre_def_list_c17 = [8,8,8,20,20,20,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+    circuit_name = "multi_operand_adder5"
+    pre_def_list_c17 = [8,8,8,14,19,20,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+    pre_def_list_mux = [8, 8, 8, 20, 20, 20, 48, 48, 48, 64, 64, 64, 64, 64, 64, 64, 64]
+    pre_def_list_mux3 = [8, 8, 8, 20, 20, 20, 25, 29, 32, 32, 32, 32, 32, 32, 32, 32, 32]
+    pre_def_list_comp2 = [8, 8, 8, 12, 12, 12, 16, 16, 16, 16, 16, 16, 16]
+    pre_def_list_mul2 = [8, 8, 8, 8, 8, 12, 12, 12, 12, 12, 16, 16, 16, 16, 16, 16, 16]
+    pre_def_list_demux5 = [8, 8, 9, 12, 12, 16, 16, 16, 16, 16, 16, 16]
+    pre_def_list_barrel_shifter3 = [8, 8, 8, 8, 8, 8, 20, 20, 20, 20, 20, 20, 32, 32, 32, 32, 32, 32, 32]
+    pre_def_list_multi_operand_adder4 = [8, 8, 8, 8, 12, 12, 12, 12, 16, 16, 16, 16, 16, 16, 16]
+    pre_def_list_demux6 = [8, 8, 8, 8, 8, 12, 12, 12, 12, 12, 16, 16, 16, 16, 16, 16, 16]
+    pre_def_list_mux4 = [8, 8, 8, 8, 8, 20, 20, 20, 20, 20, 48, 48, 48, 48, 48, 64, 64, 64, 64, 64, 64]
+    pre_def_list_comp3 = [8, 8, 8, 20, 20, 20, 48, 48, 48, 55, 55, 55, 64, 64, 64, 64, 64, 64]
+    pre_def_list_multi_operand_adder5 = [8, 8, 8, 8, 20, 20, 20, 20, 32, 32, 32, 32, 32, 32, 32]
     file_name = TRUTH_TABLE_PATH + circuit_name + ".tab"
     possible_gates = [TwoXor, TwoAnd, TwoOr]
 
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
-                                    use_orthogonal_arrays=True,
+                                    use_orthogonal_arrays=False,
                                     oa_hold_iterations=4,
                                     use_explore_nodes=True, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
-                                    pre_defined_random_size_per_iteration=[],
+                                    pre_defined_random_size_per_iteration=pre_def_list_multi_operand_adder5,
                                     min_oa_strength=2,
                                     active_features_thresh=200, # len(get_input_names(orig_data)) * 2,
                                     max_selected_gates_per_iteration=200, #2147483647,
