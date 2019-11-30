@@ -149,17 +149,18 @@ def get_gates_map(attribute_name):
     return gates_map
 
 
-def get_batch_using_pre_defined_size(data, ALCS_conf, iteration_context):
-    if (len(ALCS_conf.pre_defined_random_size_per_iteration) > 0 and len(data) > 0):
+def get_batch_using_pre_defined_size(data_indices, ALCS_conf, iteration_context):
+    if (len(ALCS_conf.pre_defined_random_size_per_iteration) > 0 and len(data_indices) > 0):
         if iteration_context.iteration_num == 1:
             batch_size = ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 1]
         else:
             batch_size = ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 1] - \
                          ALCS_conf.pre_defined_random_size_per_iteration[iteration_context.iteration_num - 2]
 
+        batch_size = min(batch_size, len(data_indices))
         random.seed(ALCS_conf.random_seed)
-        return random.sample(list(data.index), batch_size)
-    return list(data.index)
+        return random.sample(list(data_indices), batch_size)
+    return list(data_indices)
 
 
 def get_batch_using_explorable_nodes(data, values_to_explore_by_tree):
@@ -360,11 +361,17 @@ def get_batch(ALCS_conf, orig_data, iteration_context, oa_strength):
                     data_batch_indices = get_batch_using_explorable_nodes(data_batch, iteration_context.values_to_explore_by_tree)
                 else:
                     # using OA, but randomizing batch selection to fit pre defined size(using OA but not explorable nodes)
-                    data_batch_indices = get_batch_using_pre_defined_size(data_batch, ALCS_conf, iteration_context)
+                    # randomizing within the data_batch because the pre defined size for each iteration can either be equal to or smaller than only using OA
+                    data_batch_indices = get_batch_using_pre_defined_size(data_batch.index, ALCS_conf, iteration_context)
             else:  # no OA found(probably not enough attributes in current strength)
                 data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
         else:  # no more OA strengths
             data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
+    elif ALCS_conf.use_explore_nodes:
+        # using explorable nodes, but randomizing batch selection to fit pre defined size(using explorable nodes but not OA)
+        # randomizing within the data_batch because the pre defined size for each iteration can either be equal to or smaller than only using explorable nodes
+        data_batch_indices = get_batch_using_explorable_nodes(orig_data.loc[potential_data_indices], iteration_context.values_to_explore_by_tree)
+        data_batch_indices = get_batch_using_pre_defined_size(data_batch_indices, ALCS_conf, iteration_context)
     else:  # Random Batch
         data_batch_indices = get_batch_indices(ALCS_conf, iteration_context, orig_data, potential_data_indices)
 
@@ -787,7 +794,7 @@ def get_component_distribution_metric(curr_gates_map, expected_gates_map):
 if __name__ == '__main__':
     enable_write_experiments_to_DB = False
     write_iterations_batch_size = 1
-    circuit_name = "multi_operand_adder5"
+    circuit_name = "demux5"
     pre_def_list_c17 = [8,8,8,14,19,20,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
     pre_def_list_mux = [8, 8, 8, 20, 20, 20, 48, 48, 48, 64, 64, 64, 64, 64, 64, 64, 64]
     pre_def_list_mux3 = [8, 8, 8, 20, 20, 20, 25, 29, 32, 32, 32, 32, 32, 32, 32, 32, 32]
@@ -806,16 +813,16 @@ if __name__ == '__main__':
     orig_data = pandas.read_csv(file_name, delimiter='\t', header=0)
     ALCS_configuration = ActiveLearningCircuitSynthesisConfiguration(file_name=file_name, total_num_of_instances=len(orig_data),
                                     possible_gates=possible_gates, subset_min=1, subset_max=2, max_num_of_iterations=400,
-                                    use_orthogonal_arrays=False,
-                                    oa_hold_iterations=4,
-                                    use_explore_nodes=True, randomize_remaining_data=True,
+                                    use_orthogonal_arrays=True,
+                                    oa_hold_iterations=2,
+                                    use_explore_nodes=False, randomize_remaining_data=True,
                                     random_batch_size=int(round(len(orig_data)*0.1)),
-                                    pre_defined_random_size_per_iteration=pre_def_list_multi_operand_adder5,
+                                    pre_defined_random_size_per_iteration=pre_def_list_demux5,
                                     min_oa_strength=2,
-                                    active_features_thresh=200, # len(get_input_names(orig_data)) * 2,
-                                    max_selected_gates_per_iteration=200, #2147483647,
+                                    active_features_thresh=100, # len(get_input_names(orig_data)) * 2,
+                                    max_selected_gates_per_iteration=2147483647,
                                     min_prev_iteration_participation=5,
-                                    random_seed=787)
+                                    random_seed=2018)
 
     print("Working on: " + ALCS_configuration.file_name)
 
