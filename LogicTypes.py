@@ -3,7 +3,7 @@ import operator
 # CONSTANTS
 TRUTH_TABLE_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\truth_tables\\"
 CIRCUIT_SYSTEM_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\Data_Systems\\"
-
+ORIGINAL_CIRCUITS_TO_STRING_PATH = "E:\\ise_masters\\gal_thesis\\data_sets\\circuits\\original_circuits_to_string\\"
 
 class GateFeature:
     def __init__(self, gate, inputs):
@@ -42,6 +42,35 @@ class GateFeature:
 
     def copy(self):
         return GateFeature(self.gate, [inp if isinstance(inp, str) else inp.copy() for inp in self.inputs])
+
+    def deep_equals(self, other):
+        # what about basic inputs??
+
+        if not isinstance(self, type(other)):
+            return False
+        if len(self.inputs) != len(other.inputs):
+            return False
+        if self.gate is None:  #basic inputs
+            if other.gate is None:
+                if self.inputs[0] != other.inputs[0]:
+                    return False
+                else:
+                    return True
+            else:
+                return False
+
+        equal = True
+        for inp in self.inputs:
+            if not equal:
+                return False
+            else:
+                for other_inp in other.inputs:
+                    if inp.deep_equals(other_inp):
+                        equal = True
+                        break
+                    equal = False
+
+        return equal
 
 
 class OneNot:

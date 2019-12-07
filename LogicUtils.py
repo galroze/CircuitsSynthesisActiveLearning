@@ -85,10 +85,14 @@ def get_input_names(data):
             if (col[0] == 'i' and col[1].isdigit())]
 
 
+def is_output(name):
+    return name[0] == 'o' and name[1].isdigit()
+
+
 def get_output_names(data):
     out_col = []
     for col in data.columns:
-        if col[0] == 'o' and col[1].isdigit():
+        if is_output(col):
             out_col.append(col)
     return out_col
 
